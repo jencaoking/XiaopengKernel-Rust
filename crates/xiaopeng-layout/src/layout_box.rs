@@ -2,6 +2,7 @@
 
 use xiaopeng_common::Rect;
 use xiaopeng_style::ComputedStyle;
+use xiaopeng_dom::NodePtr;
 
 #[derive(Debug, Clone, Default)]
 pub struct EdgeSizes {
@@ -64,15 +65,17 @@ pub struct LayoutBox {
     pub style: ComputedStyle,
     pub children: Vec<LayoutBox>,
     pub box_type: BoxType,
+    pub node: Option<NodePtr>,
 }
 
 impl LayoutBox {
-    pub fn new(style: ComputedStyle, box_type: BoxType) -> Self {
+    pub fn new(style: ComputedStyle, box_type: BoxType, node: Option<NodePtr>) -> Self {
         Self {
             dimensions: Dimensions::default(),
             style,
             children: Vec::new(),
             box_type,
+            node,
         }
     }
 }

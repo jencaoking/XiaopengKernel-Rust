@@ -5,23 +5,23 @@ use xiaopeng_style::computed_style::ComputedStyle;
 #[test]
 fn test_z_index_sorting() {
     let mut root_style = ComputedStyle::default();
-    let mut root = LayoutBox::new(root_style, BoxType::BlockNode);
+    let mut root = LayoutBox::new(root_style, BoxType::BlockNode, None);
 
     let mut z_neg2_style = ComputedStyle::default();
     z_neg2_style.z_index = -2;
-    let z_neg2 = LayoutBox::new(z_neg2_style, BoxType::BlockNode);
+    let z_neg2 = LayoutBox::new(z_neg2_style, BoxType::BlockNode, None);
 
     let mut z_10_style = ComputedStyle::default();
     z_10_style.z_index = 10;
-    let mut z_10 = LayoutBox::new(z_10_style, BoxType::BlockNode);
+    let mut z_10 = LayoutBox::new(z_10_style, BoxType::BlockNode, None);
     
     let mut z_5_style = ComputedStyle::default();
     z_5_style.z_index = 5;
-    let z_5 = LayoutBox::new(z_5_style, BoxType::BlockNode);
+    let z_5 = LayoutBox::new(z_5_style, BoxType::BlockNode, None);
 
     let mut z_0_style = ComputedStyle::default();
     z_0_style.z_index = 0;
-    let z_0 = LayoutBox::new(z_0_style, BoxType::BlockNode);
+    let z_0 = LayoutBox::new(z_0_style, BoxType::BlockNode, None);
 
     // Tree structure:
     // Root

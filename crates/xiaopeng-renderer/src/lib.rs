@@ -49,7 +49,7 @@ mod tests {
 
         let mut style1 = ComputedStyle::default();
         style1.background_color = xiaopeng_common::Color::rgb(255, 0, 0);
-        let mut box1 = LayoutBox::new(style1, BoxType::BlockNode);
+        let mut box1 = LayoutBox::new(style1, BoxType::BlockNode, None);
         box1.dimensions.content.width = 100.0;
         box1.dimensions.content.height = 100.0;
 
@@ -66,7 +66,7 @@ mod tests {
 
         let mut style1 = ComputedStyle::default();
         style1.background_color = xiaopeng_common::Color::rgb(0, 255, 0); // Green
-        let mut box1 = LayoutBox::new(style1, BoxType::BlockNode);
+        let mut box1 = LayoutBox::new(style1, BoxType::BlockNode, None);
         box1.dimensions.content.width = 50.0;
         box1.dimensions.content.height = 50.0;
 

@@ -9,17 +9,17 @@ fn test_grid_layout() {
     // Without full grid-template-columns mapping yet, Taffy grid defaults to 1 column 1 row or something similar.
     // Wait, let's actually just verify that the Display::Grid creates a valid layout without panicking for now.
     // In a full implementation we would map grid-template-columns.
-    let mut root = LayoutBox::new(root_style, BoxType::BlockNode);
+    let mut root = LayoutBox::new(root_style, BoxType::BlockNode, None);
 
     let mut c1_style = ComputedStyle::default();
     c1_style.width = Some(100.0);
     c1_style.height = Some(100.0);
-    let c1 = LayoutBox::new(c1_style, BoxType::BlockNode);
+    let c1 = LayoutBox::new(c1_style, BoxType::BlockNode, None);
 
     let mut c2_style = ComputedStyle::default();
     c2_style.width = Some(100.0);
     c2_style.height = Some(100.0);
-    let c2 = LayoutBox::new(c2_style, BoxType::BlockNode);
+    let c2 = LayoutBox::new(c2_style, BoxType::BlockNode, None);
 
     root.children.push(c1);
     root.children.push(c2);

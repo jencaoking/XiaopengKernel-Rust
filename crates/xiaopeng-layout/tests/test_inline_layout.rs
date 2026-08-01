@@ -5,7 +5,7 @@ use xiaopeng_style::computed_style::ComputedStyle;
 #[test]
 fn test_inline_text_wrapping() {
     let mut root_style = ComputedStyle::default();
-    let mut root = LayoutBox::new(root_style, BoxType::BlockNode); // Container is Block
+    let mut root = LayoutBox::new(root_style, BoxType::BlockNode, None); // Container is Block
 
     // "Hello World Inline Layout Text Wrapping"
     // Each char width is 8.0px.
@@ -18,7 +18,7 @@ fn test_inline_text_wrapping() {
     // Total word width: 272px. Spaces width: 40px. Total: 312px.
     let text = "Hello World Inline Layout Text Wrapping";
     
-    let text_node = LayoutBox::new(ComputedStyle::default(), BoxType::TextNode(text.to_string()));
+    let text_node = LayoutBox::new(ComputedStyle::default(), BoxType::TextNode(text.to_string()), None);
     root.children.push(text_node);
 
     // Layout with containing width 150px

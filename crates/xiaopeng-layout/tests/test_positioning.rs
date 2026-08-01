@@ -6,7 +6,7 @@ use xiaopeng_style::computed_style::{ComputedStyle, Display, Position};
 fn test_absolute_positioning() {
     let mut root_style = ComputedStyle::default();
     root_style.display = Display::Flex; // Use Taffy for root
-    let mut root = LayoutBox::new(root_style, BoxType::BlockNode);
+    let mut root = LayoutBox::new(root_style, BoxType::BlockNode, None);
 
     // Absolute child positioned at right: 10px, bottom: 20px
     let mut abs_style = ComputedStyle::default();
@@ -15,7 +15,7 @@ fn test_absolute_positioning() {
     abs_style.bottom = Some(20.0);
     abs_style.width = Some(100.0);
     abs_style.height = Some(50.0);
-    let abs_child = LayoutBox::new(abs_style, BoxType::BlockNode);
+    let abs_child = LayoutBox::new(abs_style, BoxType::BlockNode, None);
 
     root.children.push(abs_child);
 

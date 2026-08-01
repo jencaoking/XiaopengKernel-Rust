@@ -35,7 +35,7 @@ impl BrowserEngine {
 
         xiaopeng_style::init_style()?;
         xiaopeng_layout::compute_layout()?;
-        xiaopeng_renderer::render_frame()?;
+        let _canvas = xiaopeng_renderer::render_display_list(&[], 800, 600)?;
 
         info!("BrowserEngine: Pipeline processing complete");
         Ok(())

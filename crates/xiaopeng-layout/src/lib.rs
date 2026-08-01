@@ -12,10 +12,28 @@ pub use layout_box::{Dimensions, EdgeSizes, LayoutBox};
 pub use stacking::StackingContext;
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
+use xiaopeng_dom::NodePtr;
 
 pub fn compute_layout() -> XiaopengResult<()> {
     info!("Computing layout");
     Ok(())
+}
+
+/// Hit testing: given an (x, y) coordinate, finds the top-most DOM Node at that position.
+pub fn hit_test(root: &LayoutBox, x: f32, y: f32) -> Option<NodePtr> {
+    let ctx = StackingContext::build(root);
+    let display_list = ctx.flatten();
+    
+    // Iterate from the top-most painted element downwards
+    for box_ref in display_list.into_iter().rev() {
+        let rect = box_ref.dimensions.border_box();
+        if x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height {
+            if let Some(node) = &box_ref.node {
+                return Some(node.clone());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -25,7 +43,7 @@ mod tests {
 
     #[test]
     fn test_layout_box_creation() {
-        let lbox = LayoutBox::new(ComputedStyle::default(), layout_box::BoxType::BlockNode);
+        let lbox = LayoutBox::new(ComputedStyle::default(), layout_box::BoxType::BlockNode, None);
         assert_eq!(lbox.children.len(), 0);
     }
 }
