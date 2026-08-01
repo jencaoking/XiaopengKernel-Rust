@@ -117,3 +117,42 @@ fn test_dom_to_html() {
     assert!(html.contains("</p>"));
     assert!(html.contains("</div>"));
 }
+
+#[test]
+fn test_insert_before_self_move_deadlock() {
+    let parent = Node::new(NodeData::Element(ElementData::new("div".into())));
+    
+    let a = Node::new(NodeData::Element(ElementData::new("a".into())));
+    let b = Node::new(NodeData::Element(ElementData::new("b".into())));
+    let c = Node::new(NodeData::Element(ElementData::new("c".into())));
+    let d = Node::new(NodeData::Element(ElementData::new("d".into())));
+    
+    Node::append_child(&parent, &a);
+    Node::append_child(&parent, &b);
+    Node::append_child(&parent, &c);
+    Node::append_child(&parent, &d);
+    
+    // We want to move 'A' to index 2 (before 'C').
+    // Since 'A' is already a child of 'parent', its old_parent is 'parent'.
+    // If insert_before holds the write lock on 'parent' while trying to write lock 'old_parent', it will deadlock.
+    let result = Node::insert_before(&parent, &a, 2);
+    assert!(result.is_ok());
+    
+    let children = parent.read().unwrap().children.clone();
+    assert_eq!(children.len(), 4);
+    
+    // The order should now be B, C, A, D?
+    // Let's trace it: 
+    // Initial: [A, B, C, D]
+    // Retain (remove A): [B, C, D]
+    // Insert at 2: [B, C, A, D]
+    let tags: Vec<String> = children.iter().map(|c| {
+        if let NodeData::Element(ref el) = c.read().unwrap().data {
+            el.tag_name.clone()
+        } else {
+            String::new()
+        }
+    }).collect();
+    
+    assert_eq!(tags, vec!["b", "c", "a", "d"]);
+}

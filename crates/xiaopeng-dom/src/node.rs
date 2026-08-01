@@ -132,25 +132,30 @@ impl Node {
 
     pub fn insert_before(parent_ptr: &NodePtr, child_ptr: &NodePtr, index: usize) -> Result<(), &'static str> {
         debug!("Inserting child into parent DOM Node at index {}", index);
-        let mut parent = parent_ptr.write().unwrap();
         
-        // Strict boundary check: index cannot be strictly greater than children length.
-        // It CAN be equal to children.len(), which semantics-wise is append_child,
-        // but wait, the user said "对 index == len 本应返回 Err(IndexOutOfBounds)".
-        // So index MUST be < len. If they want to append, they must use append_child.
-        if index >= parent.children.len() {
-            return Err("IndexOutOfBounds: insert_before requires index < children.len()");
-        }
-
-        // Remove from old parent if exists
-        if let Some(old_parent_weak) = &child_ptr.read().unwrap().parent {
-            if let Some(old_parent) = old_parent_weak.upgrade() {
-                old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+        // 1. Strict boundary check (read lock only, released immediately)
+        {
+            let parent = parent_ptr.read().unwrap();
+            if index >= parent.children.len() {
+                return Err("IndexOutOfBounds: insert_before requires index < children.len()");
             }
         }
 
+        // 2. Remove from old parent if exists.
+        // We do this BEFORE acquiring parent_ptr's write lock to avoid deadlock if old_parent == parent_ptr
+        let old_parent = child_ptr.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
+        if let Some(old_parent) = old_parent {
+            old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+        }
+
+        // 3. Insert into the new parent.
+        let mut parent = parent_ptr.write().unwrap();
+        // If old_parent == parent_ptr, retaining the child above might have shrunk the children vec.
+        // We clamp the index to prevent out-of-bounds panics after removal.
+        let safe_index = index.min(parent.children.len());
+        
         child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
-        parent.children.insert(index, Arc::clone(child_ptr));
+        parent.children.insert(safe_index, Arc::clone(child_ptr));
         
         Ok(())
     }
