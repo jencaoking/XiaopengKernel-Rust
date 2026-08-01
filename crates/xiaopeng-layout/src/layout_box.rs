@@ -70,8 +70,25 @@ pub struct LayoutBox {
 
 impl LayoutBox {
     pub fn new(style: ComputedStyle, box_type: BoxType, node: Option<NodePtr>) -> Self {
+        let mut dimensions = Dimensions::default();
+        
+        dimensions.margin.top = style.margin_top;
+        dimensions.margin.bottom = style.margin_bottom;
+        dimensions.margin.left = style.margin_left;
+        dimensions.margin.right = style.margin_right;
+        
+        dimensions.padding.top = style.padding_top;
+        dimensions.padding.bottom = style.padding_bottom;
+        dimensions.padding.left = style.padding_left;
+        dimensions.padding.right = style.padding_right;
+        
+        dimensions.border.top = style.border_top_width;
+        dimensions.border.bottom = style.border_bottom_width;
+        dimensions.border.left = style.border_left_width;
+        dimensions.border.right = style.border_right_width;
+
         Self {
-            dimensions: Dimensions::default(),
+            dimensions,
             style,
             children: Vec::new(),
             box_type,

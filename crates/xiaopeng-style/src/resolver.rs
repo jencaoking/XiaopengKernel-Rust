@@ -128,10 +128,18 @@ impl<'a> StyleResolver<'a> {
                 };
             }
             "color" => {
-                if decl.value == "red" {
-                    style.color = Color { r: 255, g: 0, b: 0, a: 255 };
-                } else if decl.value == "blue" {
-                    style.color = Color { r: 0, g: 0, b: 255, a: 255 };
+                if let Some(c) = parse_color(&decl.value) {
+                    style.color = c;
+                }
+            }
+            "background-color" | "background" => {
+                if let Some(c) = parse_color(&decl.value) {
+                    style.background_color = c;
+                }
+            }
+            "border-color" => {
+                if let Some(c) = parse_color(&decl.value) {
+                    style.border_color = c;
                 }
             }
             "width" => {
@@ -190,7 +198,105 @@ impl<'a> StyleResolver<'a> {
                     style.z_index = v;
                 }
             }
+            "margin" => {
+                if let Some(v) = parse_length(&decl.value) {
+                    style.margin_top = v;
+                    style.margin_bottom = v;
+                    style.margin_left = v;
+                    style.margin_right = v;
+                }
+            }
+            "margin-top" => { if let Some(v) = parse_length(&decl.value) { style.margin_top = v; } }
+            "margin-bottom" => { if let Some(v) = parse_length(&decl.value) { style.margin_bottom = v; } }
+            "margin-left" => { if let Some(v) = parse_length(&decl.value) { style.margin_left = v; } }
+            "margin-right" => { if let Some(v) = parse_length(&decl.value) { style.margin_right = v; } }
+            "padding" => {
+                if let Some(v) = parse_length(&decl.value) {
+                    style.padding_top = v;
+                    style.padding_bottom = v;
+                    style.padding_left = v;
+                    style.padding_right = v;
+                }
+            }
+            "padding-top" => { if let Some(v) = parse_length(&decl.value) { style.padding_top = v; } }
+            "padding-bottom" => { if let Some(v) = parse_length(&decl.value) { style.padding_bottom = v; } }
+            "padding-left" => { if let Some(v) = parse_length(&decl.value) { style.padding_left = v; } }
+            "padding-right" => { if let Some(v) = parse_length(&decl.value) { style.padding_right = v; } }
+            "border-width" => {
+                if let Some(v) = parse_length(&decl.value) {
+                    style.border_top_width = v;
+                    style.border_bottom_width = v;
+                    style.border_left_width = v;
+                    style.border_right_width = v;
+                }
+            }
+            "border" => {
+                // Extremely simple border parsing: "1px solid red"
+                let parts: Vec<&str> = decl.value.split_whitespace().collect();
+                if let Some(w) = parts.iter().find_map(|p| parse_length(p)) {
+                    style.border_top_width = w;
+                    style.border_bottom_width = w;
+                    style.border_left_width = w;
+                    style.border_right_width = w;
+                }
+                if let Some(c) = parts.iter().find_map(|p| parse_color(p)) {
+                    style.border_color = c;
+                }
+            }
             _ => {}
         }
+    }
+}
+
+fn parse_length(val: &str) -> Option<f32> {
+    if val.ends_with("px") {
+        val.trim_end_matches("px").parse::<f32>().ok()
+    } else if val == "0" {
+        Some(0.0)
+    } else {
+        None
+    }
+}
+
+fn parse_color(val: &str) -> Option<Color> {
+    let val = val.trim();
+    match val {
+        "red" => Some(Color::rgb(255, 0, 0)),
+        "blue" => Some(Color::rgb(0, 0, 255)),
+        "green" => Some(Color::rgb(0, 255, 0)),
+        "black" => Some(Color::rgb(0, 0, 0)),
+        "white" => Some(Color::rgb(255, 255, 255)),
+        "transparent" => Some(Color::rgba(0, 0, 0, 0)),
+        _ if val.starts_with('#') => {
+            let hex = &val[1..];
+            if hex.len() == 6 || hex.len() == 8 {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                let a = if hex.len() == 8 { u8::from_str_radix(&hex[6..8], 16).ok()? } else { 255 };
+                Some(Color::rgba(r, g, b, a))
+            } else if hex.len() == 3 {
+                let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+                let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+                let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+                Some(Color::rgb(r * 17, g * 17, b * 17))
+            } else {
+                None
+            }
+        }
+        _ if val.starts_with("rgb(") || val.starts_with("rgba(") => {
+            let inner = val.split('(').nth(1)?.trim_end_matches(')');
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() >= 3 {
+                let r = parts[0].parse::<u8>().ok()?;
+                let g = parts[1].parse::<u8>().ok()?;
+                let b = parts[2].parse::<u8>().ok()?;
+                let a = if parts.len() == 4 { (parts[3].parse::<f32>().ok()? * 255.0) as u8 } else { 255 };
+                Some(Color::rgba(r, g, b, a))
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }

@@ -34,6 +34,27 @@ pub struct ComputedStyle {
     pub right: Option<f32>,
     pub bottom: Option<f32>,
     pub z_index: i32,
+    
+    // Margins
+    pub margin_top: f32,
+    pub margin_bottom: f32,
+    pub margin_left: f32,
+    pub margin_right: f32,
+
+    // Padding
+    pub padding_top: f32,
+    pub padding_bottom: f32,
+    pub padding_left: f32,
+    pub padding_right: f32,
+
+    // Border Widths
+    pub border_top_width: f32,
+    pub border_bottom_width: f32,
+    pub border_left_width: f32,
+    pub border_right_width: f32,
+    
+    // Border Colors
+    pub border_color: Color,
 }
 
 impl Default for ComputedStyle {
@@ -50,6 +71,23 @@ impl Default for ComputedStyle {
             right: None,
             bottom: None,
             z_index: 0,
+            
+            margin_top: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            
+            padding_top: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+            padding_right: 0.0,
+            
+            border_top_width: 0.0,
+            border_bottom_width: 0.0,
+            border_left_width: 0.0,
+            border_right_width: 0.0,
+            
+            border_color: Color::TRANSPARENT,
         }
     }
 }

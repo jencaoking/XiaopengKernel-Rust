@@ -38,10 +38,10 @@ impl DisplayList {
             
             // Border
             let border_width = box_ref.dimensions.border.top.max(box_ref.dimensions.border.left);
-            if border_width > 0.0 && box_ref.style.color.a > 0 {
+            if border_width > 0.0 && box_ref.style.border_color.a > 0 {
                 list.commands.push(DisplayCommand::DrawBorder {
                     rect,
-                    color: box_ref.style.color,
+                    color: box_ref.style.border_color,
                     width: border_width,
                 });
             }
