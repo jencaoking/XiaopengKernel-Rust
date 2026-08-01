@@ -9,3 +9,4 @@ xiaopeng-common.workspace = true
 xiaopeng-dom.workspace = true
 xiaopeng-style.workspace = true
 tracing.workspace = true
+taffy = "0.12.2"
