@@ -34,10 +34,14 @@ impl BrowserEngine {
         self.context.document = Some(doc);
 
         xiaopeng_style::init_style()?;
+        
+        let mut display_list = xiaopeng_renderer::DisplayList::new();
         if let Some(ref doc) = self.context.document {
-            xiaopeng_layout::compute_layout(&doc.root, self.config.width as f32, self.config.height as f32)?;
+            let layout_root = xiaopeng_layout::compute_layout(&doc.root, self.config.width as f32, self.config.height as f32)?;
+            display_list = xiaopeng_renderer::DisplayList::build(&layout_root);
         }
-        let _canvas = xiaopeng_renderer::render_display_list(&[], 800, 600)?;
+        
+        let _canvas = xiaopeng_renderer::render_display_list(&display_list, self.config.width, self.config.height)?;
 
         info!("BrowserEngine: Pipeline processing complete");
         Ok(())
