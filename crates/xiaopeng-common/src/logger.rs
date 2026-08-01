@@ -25,8 +25,8 @@ impl Default for LoggerConfig {
 
 /// Initialize tracing subscriber with custom configuration
 pub fn init_logging_with_config(config: LoggerConfig) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.default_level));
 
     let builder = fmt::Subscriber::builder()
         .with_env_filter(filter)

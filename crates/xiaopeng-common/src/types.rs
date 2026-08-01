@@ -34,7 +34,12 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn contains(&self, p: Point) -> bool {
@@ -51,9 +56,24 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Self = Self { r: 0, g: 0, b: 0, a: 255 };
-    pub const WHITE: Self = Self { r: 255, g: 255, b: 255, a: 255 };
-    pub const TRANSPARENT: Self = Self { r: 0, g: 0, b: 0, a: 0 };
+    pub const BLACK: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    pub const WHITE: Self = Self {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
+    pub const TRANSPARENT: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
 
     pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }

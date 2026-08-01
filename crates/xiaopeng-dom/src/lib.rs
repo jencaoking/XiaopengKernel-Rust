@@ -39,6 +39,9 @@ mod tests {
     #[test]
     fn test_document_creation() {
         let doc = Document::new();
-        assert!(matches!(doc.root.read().unwrap().node_type, NodeType::Document));
+        assert!(matches!(
+            doc.root.read().unwrap().node_type,
+            NodeType::Document
+        ));
     }
 }

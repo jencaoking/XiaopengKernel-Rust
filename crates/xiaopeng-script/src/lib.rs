@@ -7,7 +7,10 @@ use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
 pub fn eval_script(script_code: &str) -> XiaopengResult<()> {
-    info!("Evaluating JavaScript snippet (length: {})", script_code.len());
+    info!(
+        "Evaluating JavaScript snippet (length: {})",
+        script_code.len()
+    );
     console_log("JS engine initialized successfully");
     Ok(())
 }
