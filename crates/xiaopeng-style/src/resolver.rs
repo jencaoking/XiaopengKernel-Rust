@@ -141,6 +141,13 @@ impl<'a> StyleResolver<'a> {
                     }
                 }
             }
+            "height" => {
+                if decl.value.ends_with("px") {
+                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
+                        style.height = Some(v);
+                    }
+                }
+            }
             _ => {}
         }
     }

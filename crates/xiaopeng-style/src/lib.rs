@@ -4,8 +4,10 @@ pub mod computed_style;
 pub mod parser;
 pub mod resolver;
 pub mod selector;
+pub mod styled_node;
 
 pub use computed_style::{ComputedStyle, Display};
+pub use styled_node::StyledNode;
 pub use resolver::StyleResolver;
 pub use selector::{Selector, SimpleSelector, Specificity};
 use tracing::info;
