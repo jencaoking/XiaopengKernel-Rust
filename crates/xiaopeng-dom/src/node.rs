@@ -140,4 +140,94 @@ impl Node {
     pub fn last_child(&self) -> Option<NodePtr> {
         self.children.last().cloned()
     }
+
+    /// Recursively searches for an element with the given ID.
+    pub fn get_element_by_id(node: &NodePtr, id: &str) -> Option<NodePtr> {
+        let n = node.read().unwrap();
+        if let NodeData::Element(ref el) = n.data {
+            if el.id().map(|s| s.as_str()) == Some(id) {
+                return Some(Arc::clone(node));
+            }
+        }
+        for child in &n.children {
+            if let Some(found) = Self::get_element_by_id(child, id) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Recursively collects all elements matching the given tag name.
+    pub fn get_elements_by_tag_name(node: &NodePtr, tag_name: &str) -> Vec<NodePtr> {
+        let mut results = Vec::new();
+        Self::collect_elements_by_tag_name(node, tag_name, &mut results);
+        results
+    }
+
+    fn collect_elements_by_tag_name(node: &NodePtr, tag_name: &str, results: &mut Vec<NodePtr>) {
+        let n = node.read().unwrap();
+        if let NodeData::Element(ref el) = n.data {
+            if el.tag_name == tag_name {
+                results.push(Arc::clone(node));
+            }
+        }
+        for child in &n.children {
+            Self::collect_elements_by_tag_name(child, tag_name, results);
+        }
+    }
+
+    /// Recursively collects all elements containing the given class name.
+    pub fn get_elements_by_class_name(node: &NodePtr, class_name: &str) -> Vec<NodePtr> {
+        let mut results = Vec::new();
+        Self::collect_elements_by_class_name(node, class_name, &mut results);
+        results
+    }
+
+    fn collect_elements_by_class_name(node: &NodePtr, class_name: &str, results: &mut Vec<NodePtr>) {
+        let n = node.read().unwrap();
+        if let NodeData::Element(ref el) = n.data {
+            if el.classes().contains(&class_name) {
+                results.push(Arc::clone(node));
+            }
+        }
+        for child in &n.children {
+            Self::collect_elements_by_class_name(child, class_name, results);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dom_queries() {
+        let root = Node::new(NodeData::Element(ElementData::new("div".into())));
+        
+        let mut child1_data = ElementData::new("span".into());
+        child1_data.set_attribute("id".into(), "test-id".into());
+        child1_data.set_attribute("class".into(), "text-bold text-red".into());
+        let child1 = Node::new(NodeData::Element(child1_data));
+        
+        let mut child2_data = ElementData::new("p".into());
+        child2_data.set_attribute("class".into(), "text-bold".into());
+        let child2 = Node::new(NodeData::Element(child2_data));
+
+        Node::append_child(&root, &child1);
+        Node::append_child(&root, &child2);
+
+        // Test get_element_by_id
+        let found = Node::get_element_by_id(&root, "test-id");
+        assert!(found.is_some());
+        assert!(Arc::ptr_eq(&found.unwrap(), &child1));
+
+        // Test get_elements_by_tag_name
+        let spans = Node::get_elements_by_tag_name(&root, "span");
+        assert_eq!(spans.len(), 1);
+        assert!(Arc::ptr_eq(&spans[0], &child1));
+
+        // Test get_elements_by_class_name
+        let bolds = Node::get_elements_by_class_name(&root, "text-bold");
+        assert_eq!(bolds.len(), 2);
+    }
 }
