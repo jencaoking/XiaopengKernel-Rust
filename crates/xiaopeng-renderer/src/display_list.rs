@@ -48,8 +48,7 @@ impl DisplayList {
             
             // Text
             if let BoxType::TextNode(ref text) = box_ref.box_type {
-                // Real engine gets font_size from style. Currently hardcoded to 16.
-                let font_size = 16.0;
+                let font_size = box_ref.style.font_size;
                 list.commands.push(DisplayCommand::DrawText {
                     text: text.clone(),
                     rect: box_ref.dimensions.content,

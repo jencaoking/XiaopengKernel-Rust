@@ -1,7 +1,7 @@
 //! WHATWG HTML Tokenizer State Machine
 
 use std::str::Chars;
-use tracing::{debug, trace};
+use tracing::trace;
 use xiaopeng_common::XiaopengResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,11 +168,8 @@ impl<'a> HtmlTokenizer<'a> {
 
     fn push_new_attribute(&mut self) {
         if let Some(attr) = self.current_attribute.take() {
-            match &mut self.current_token {
-                Some(HtmlToken::StartTag { attributes, .. }) => {
-                    attributes.push(attr);
-                }
-                _ => {}
+            if let Some(HtmlToken::StartTag { attributes, .. }) = &mut self.current_token {
+                attributes.push(attr);
             }
         }
         self.current_attribute = Some(Attribute {
@@ -195,11 +192,8 @@ impl<'a> HtmlTokenizer<'a> {
     
     fn emit_current_token(&mut self) -> Option<HtmlToken> {
         if let Some(attr) = self.current_attribute.take() {
-            match &mut self.current_token {
-                Some(HtmlToken::StartTag { attributes, .. }) => {
-                    attributes.push(attr);
-                }
-                _ => {}
+            if let Some(HtmlToken::StartTag { attributes, .. }) = &mut self.current_token {
+                attributes.push(attr);
             }
         }
         let token = self.current_token.take().unwrap();
@@ -443,23 +437,53 @@ impl<'a> HtmlTokenizer<'a> {
                     }
                 }
                 TokenizerState::MarkupDeclarationOpen => {
+                    // We've already consumed one char after `<!`.
+                    // Per spec, if the *next two chars* are `--`, emit comment.
+                    // We've consumed the first of those two; we need to peek at the second.
                     if ch == '-' {
-                        self.state = TokenizerState::CommentStartDash;
-                    } else if ch.to_ascii_uppercase() == 'D' {
-                        self.reconsume_in(TokenizerState::Doctype);
+                        // Consumed first `-`. Now consume the second.
+                        let next = self.consume_next();
+                        if next == Some('-') {
+                            // Correct: `<!--` sequence complete, enter CommentStart
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.state = TokenizerState::CommentStart;
+                        } else {
+                            // Only one `-`, treat as bogus comment
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.reconsume_in(TokenizerState::BogusComment);
+                        }
+                    } else if ch.eq_ignore_ascii_case(&'D') {
+                        // Possibly `DOCTYPE`. Consume remaining `OCTYPE` (6 chars).
+                        let remaining = ['O', 'C', 'T', 'Y', 'P', 'E'];
+                        let mut matched = true;
+                        for expected in &remaining {
+                            match self.consume_next() {
+                                Some(c) if c.to_ascii_uppercase() == *expected => {}
+                                _ => { matched = false; break; }
+                            }
+                        }
+                        if matched {
+                            self.current_token = Some(HtmlToken::Doctype {
+                                name: None,
+                                public_id: None,
+                                system_id: None,
+                                force_quirks: false,
+                            });
+                            self.state = TokenizerState::BeforeDoctypeName;
+                        } else {
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.reconsume_in(TokenizerState::BogusComment);
+                        }
                     } else {
                         self.current_token = Some(HtmlToken::Comment(String::new()));
                         self.reconsume_in(TokenizerState::BogusComment);
                     }
                 }
                 TokenizerState::CommentStartDash => {
-                    if ch == '-' {
-                        self.current_token = Some(HtmlToken::Comment(String::new()));
-                        self.state = TokenizerState::CommentStart;
-                    } else {
-                        self.current_token = Some(HtmlToken::Comment(String::new()));
-                        self.reconsume_in(TokenizerState::BogusComment);
-                    }
+                    // This state is now unused (merged into MarkupDeclarationOpen above),
+                    // but keep it for safety: treat as bogus comment
+                    self.current_token = Some(HtmlToken::Comment(String::new()));
+                    self.reconsume_in(TokenizerState::BogusComment);
                 }
                 TokenizerState::CommentStart => {
                     if ch == '-' {
@@ -585,10 +609,8 @@ impl<'a> HtmlTokenizer<'a> {
                             return Ok(self.emit_current_token());
                         }
                         _ => {
-                            if let Some(HtmlToken::Doctype { ref mut name, .. }) = self.current_token {
-                                if let Some(n) = name {
-                                    n.push(ch.to_ascii_lowercase());
-                                }
+                            if let Some(HtmlToken::Doctype { name: Some(ref mut n), .. }) = self.current_token {
+                                n.push(ch.to_ascii_lowercase());
                             }
                         }
                     }

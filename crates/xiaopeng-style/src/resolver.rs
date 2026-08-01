@@ -60,7 +60,7 @@ impl<'a> StyleResolver<'a> {
             let part = &selector.parts[part_idx as usize];
             let Some(ref curr) = current_node else { return false; };
 
-            if !self.matches_simple_selector(&curr, part) {
+            if !self.matches_simple_selector(curr, part) {
                 // If it's a descendant combinator, we can ascend the tree looking for a match
                 if part_idx < selector.parts.len() as isize - 1 {
                     let comb = selector.combinators[part_idx as usize];
@@ -196,6 +196,11 @@ impl<'a> StyleResolver<'a> {
             "z-index" => {
                 if let Ok(v) = decl.value.parse::<i32>() {
                     style.z_index = v;
+                }
+            }
+            "font-size" => {
+                if let Some(v) = parse_length(&decl.value) {
+                    style.font_size = v;
                 }
             }
             "margin" => {

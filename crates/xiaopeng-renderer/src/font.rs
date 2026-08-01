@@ -1,9 +1,9 @@
 //! Pure Rust Text Shaping (Rustybuzz) and Font Rasterization (Swash)
 
 use rustybuzz::{Face, UnicodeBuffer};
-use swash::scale::{ScaleContext, Scaler, Render};
+use swash::scale::{ScaleContext, Render};
 use swash::scale::image::Image;
-use swash::{FontRef, CacheKey};
+use swash::FontRef;
 
 pub struct FontManager {
     font_data: Vec<u8>,

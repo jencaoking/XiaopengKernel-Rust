@@ -103,7 +103,7 @@ impl HtmlTreeBuilder {
 
     fn process_initial(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Character(c) if c.is_whitespace() => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { .. } => {
                 self.insertion_mode = InsertionMode::BeforeHtml;
@@ -117,7 +117,7 @@ impl HtmlTreeBuilder {
 
     fn process_before_html(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Character(c) if c.is_whitespace() => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "html" => {
                 self.insert_element_with_token(token);
@@ -133,7 +133,7 @@ impl HtmlTreeBuilder {
 
     fn process_before_head(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Character(c) if c.is_whitespace() => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "head" => {
                 self.insert_element_with_token(token);

@@ -34,11 +34,10 @@ pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32, offset_x
                 }
             }
             BoxType::InlineNode => {
-                // Layout inline children recursively
+                // Layout inline children recursively, starting from current cursor position
                 layout_inline(child, containing_block_width - (current_x - offset_x), current_x, current_y);
-                // Advance x based on the child's width
-                child.dimensions.content.x = current_x;
-                child.dimensions.content.y = current_y;
+                // The recursive call already set child.dimensions.content.x/y;
+                // don't overwrite them. Just advance the cursor.
                 current_x += child.dimensions.margin_box().width;
                 if child.dimensions.margin_box().height > max_line_height {
                     max_line_height = child.dimensions.margin_box().height;

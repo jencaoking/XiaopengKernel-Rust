@@ -10,7 +10,6 @@ pub use display_list::{DisplayList, DisplayCommand};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
-use xiaopeng_layout::LayoutBox;
 
 pub fn render_display_list(display_list: &DisplayList, width: u32, height: u32) -> XiaopengResult<BitmapCanvas> {
     info!("Rendering display list to {}x{} canvas", width, height);

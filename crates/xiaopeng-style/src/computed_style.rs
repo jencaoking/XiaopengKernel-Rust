@@ -55,6 +55,9 @@ pub struct ComputedStyle {
     
     // Border Colors
     pub border_color: Color,
+    
+    // Typography
+    pub font_size: f32,
 }
 
 impl Default for ComputedStyle {
@@ -88,6 +91,7 @@ impl Default for ComputedStyle {
             border_right_width: 0.0,
             
             border_color: Color::TRANSPARENT,
+            font_size: 16.0,
         }
     }
 }

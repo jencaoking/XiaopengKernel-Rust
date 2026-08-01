@@ -1,7 +1,6 @@
 //! Block Formatting Context (BFC)
 
 use crate::layout_box::LayoutBox;
-use xiaopeng_style::computed_style::Display;
 
 pub fn layout_block(node: &mut LayoutBox, containing_block_width: f32, offset_x: f32, offset_y: f32) {
     // 1. Calculate width based on containing block

@@ -352,7 +352,7 @@ impl Node {
         use_capture: bool,
     ) {
         let mut node = node_ptr.write().unwrap();
-        let entries = node.listeners.entry(event_type.to_string()).or_insert_with(Vec::new);
+        let entries = node.listeners.entry(event_type.to_string()).or_default();
         entries.push(EventListenerEntry { listener, use_capture });
     }
 
