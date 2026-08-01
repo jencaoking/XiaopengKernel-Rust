@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, Weak};
 use tracing::debug;
+use crate::event::{Event, EventPhase, EventListenerEntry, EventListener};
 
 pub type NodePtr = Arc<RwLock<Node>>;
 pub type WeakNodePtr = Weak<RwLock<Node>>;
@@ -94,6 +95,7 @@ pub struct Node {
     pub parent: Option<WeakNodePtr>,
     pub children: Vec<NodePtr>,
     pub data: NodeData,
+    pub listeners: HashMap<String, Vec<EventListenerEntry>>,
 }
 
 impl Node {
@@ -103,6 +105,7 @@ impl Node {
             parent: None,
             children: Vec::new(),
             data,
+            listeners: HashMap::new(),
         }))
     }
 
@@ -339,6 +342,79 @@ impl Node {
         }
         for child in &n.children {
             Self::collect_elements_by_class_name(child, class_name, results);
+        }
+    }
+
+    pub fn add_event_listener(
+        node_ptr: &NodePtr,
+        event_type: &str,
+        listener: Arc<dyn EventListener>,
+        use_capture: bool,
+    ) {
+        let mut node = node_ptr.write().unwrap();
+        let entries = node.listeners.entry(event_type.to_string()).or_insert_with(Vec::new);
+        entries.push(EventListenerEntry { listener, use_capture });
+    }
+
+    pub fn dispatch_event(node_ptr: &NodePtr, event: &mut Event) -> bool {
+        let mut path = Vec::new();
+        let mut current = Arc::clone(node_ptr);
+        loop {
+            let parent = current.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
+            if let Some(p) = parent {
+                path.push(Arc::clone(&p));
+                current = p;
+            } else {
+                break;
+            }
+        }
+
+        event.phase = EventPhase::CapturingPhase;
+        for ptr in path.iter().rev() {
+            if event.propagation_stopped { break; }
+            Self::invoke_listeners(ptr, event);
+        }
+
+        if !event.propagation_stopped {
+            event.phase = EventPhase::AtTarget;
+            Self::invoke_listeners(node_ptr, event);
+        }
+
+        if event.bubbles && !event.propagation_stopped {
+            event.phase = EventPhase::BubblingPhase;
+            for ptr in path.iter() {
+                if event.propagation_stopped { break; }
+                Self::invoke_listeners(ptr, event);
+            }
+        }
+
+        event.phase = EventPhase::None;
+        !event.default_prevented
+    }
+
+    fn invoke_listeners(node_ptr: &NodePtr, event: &mut Event) {
+        let listeners_to_run = {
+            let node = node_ptr.read().unwrap();
+            if let Some(entries) = node.listeners.get(&event.event_type) {
+                entries.clone()
+            } else {
+                Vec::new()
+            }
+        };
+
+        for entry in listeners_to_run {
+            if event.immediate_propagation_stopped { break; }
+            
+            let should_run = match event.phase {
+                EventPhase::CapturingPhase => entry.use_capture,
+                EventPhase::BubblingPhase => !entry.use_capture,
+                EventPhase::AtTarget => true,
+                _ => false,
+            };
+
+            if should_run {
+                entry.listener.handle_event(event);
+            }
         }
     }
 }
