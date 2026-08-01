@@ -9,6 +9,9 @@ xiaopeng-common.workspace = true
 xiaopeng-layout.workspace = true
 tracing.workspace = true
 tiny-skia = "0.12.0"
+wgpu = "30.0.0"
+pollster = "1.0.1"
+bytemuck = { version = "1.25.2", features = ["derive"] }
 
 [dev-dependencies]
 xiaopeng-style.workspace = true
