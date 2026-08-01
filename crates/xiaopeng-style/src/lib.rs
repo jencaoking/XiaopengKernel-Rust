@@ -1,6 +1,7 @@
 //! XiaopengKernel CSS Style & Cascade Resolver Module
 
 pub mod computed_style;
+pub mod parser;
 pub mod resolver;
 pub mod selector;
 
@@ -22,11 +23,12 @@ mod tests {
     #[test]
     fn test_specificity() {
         let sel = Selector {
-            simple_selectors: vec![
-                SimpleSelector::Id("header".into()),
-                SimpleSelector::Class("btn".into()),
-                SimpleSelector::TagName("button".into()),
+            parts: vec![
+                selector::SimpleSelector { selector_type: selector::SelectorType::Id, value: "header".into() },
+                selector::SimpleSelector { selector_type: selector::SelectorType::Class, value: "btn".into() },
+                selector::SimpleSelector { selector_type: selector::SelectorType::Tag, value: "button".into() },
             ],
+            combinators: vec![selector::Combinator::None, selector::Combinator::None],
         };
         let spec = sel.specificity();
         assert_eq!(spec, Specificity { a: 1, b: 1, c: 1 });
