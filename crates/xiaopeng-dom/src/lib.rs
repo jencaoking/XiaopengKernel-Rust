@@ -1,14 +1,23 @@
 //! XiaopengKernel DOM (Document Object Model) Module
 
+pub mod event;
+pub mod node;
+
+pub use event::{Event, EventPhase};
+pub use node::{ElementData, Node, NodePtr, NodeType};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
-pub struct Document;
+pub struct Document {
+    pub root: NodePtr,
+}
 
 impl Document {
     pub fn new() -> Self {
         info!("Initializing DOM Document");
-        Self
+        Self {
+            root: Node::new(NodeType::Document),
+        }
     }
 }
 
@@ -29,7 +38,7 @@ mod tests {
 
     #[test]
     fn test_document_creation() {
-        let _doc = Document::new();
-        assert!(init_dom().is_ok());
+        let doc = Document::new();
+        assert!(matches!(doc.root.read().unwrap().node_type, NodeType::Document));
     }
 }
