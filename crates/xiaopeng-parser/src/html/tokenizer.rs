@@ -442,7 +442,269 @@ impl<'a> HtmlTokenizer<'a> {
                         }
                     }
                 }
-                // ... Stub for rest
+                TokenizerState::MarkupDeclarationOpen => {
+                    if ch == '-' {
+                        self.state = TokenizerState::CommentStartDash;
+                    } else if ch.to_ascii_uppercase() == 'D' {
+                        self.reconsume_in(TokenizerState::Doctype);
+                    } else {
+                        self.current_token = Some(HtmlToken::Comment(String::new()));
+                        self.reconsume_in(TokenizerState::BogusComment);
+                    }
+                }
+                TokenizerState::CommentStartDash => {
+                    if ch == '-' {
+                        self.current_token = Some(HtmlToken::Comment(String::new()));
+                        self.state = TokenizerState::CommentStart;
+                    } else {
+                        self.current_token = Some(HtmlToken::Comment(String::new()));
+                        self.reconsume_in(TokenizerState::BogusComment);
+                    }
+                }
+                TokenizerState::CommentStart => {
+                    if ch == '-' {
+                        self.state = TokenizerState::CommentEndDash;
+                    } else if ch == '>' {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if eof {
+                        self.reconsume_in(TokenizerState::Data);
+                    } else {
+                        self.reconsume_in(TokenizerState::Comment);
+                    }
+                }
+                TokenizerState::Comment => {
+                    if ch == '-' {
+                        self.state = TokenizerState::CommentEndDash;
+                    } else if eof {
+                        return Ok(self.emit_current_token());
+                    } else {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push(ch);
+                        }
+                    }
+                }
+                TokenizerState::CommentEndDash => {
+                    if ch == '-' {
+                        self.state = TokenizerState::CommentEnd;
+                    } else if eof {
+                        return Ok(self.emit_current_token());
+                    } else {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push('-');
+                        }
+                        self.reconsume_in(TokenizerState::Comment);
+                    }
+                }
+                TokenizerState::CommentEnd => {
+                    if ch == '>' {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if ch == '!' {
+                        self.state = TokenizerState::CommentEndBang;
+                    } else if ch == '-' {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push('-');
+                        }
+                    } else if eof {
+                        return Ok(self.emit_current_token());
+                    } else {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push('-');
+                            data.push('-');
+                        }
+                        self.reconsume_in(TokenizerState::Comment);
+                    }
+                }
+                TokenizerState::CommentEndBang => {
+                    if ch == '-' {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push('-');
+                            data.push('-');
+                            data.push('!');
+                        }
+                        self.state = TokenizerState::CommentEndDash;
+                    } else if ch == '>' {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if eof {
+                        return Ok(self.emit_current_token());
+                    } else {
+                        if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                            data.push('-');
+                            data.push('-');
+                            data.push('!');
+                        }
+                        self.reconsume_in(TokenizerState::Comment);
+                    }
+                }
+                TokenizerState::Doctype => {
+                    self.current_token = Some(HtmlToken::Doctype {
+                        name: None,
+                        public_id: None,
+                        system_id: None,
+                        force_quirks: false,
+                    });
+                    self.state = TokenizerState::BeforeDoctypeName;
+                }
+                TokenizerState::BeforeDoctypeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                *force_quirks = true;
+                            }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                *force_quirks = true;
+                            }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut name, .. }) = self.current_token {
+                                *name = Some(String::new());
+                            }
+                            self.reconsume_in(TokenizerState::DoctypeName);
+                        }
+                    }
+                }
+                TokenizerState::DoctypeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::AfterDoctypeName,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                *force_quirks = true;
+                            }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut name, .. }) = self.current_token {
+                                if let Some(n) = name {
+                                    n.push(ch.to_ascii_lowercase());
+                                }
+                            }
+                        }
+                    }
+                }
+                TokenizerState::AfterDoctypeName | TokenizerState::BogusDoctype => {
+                    match ch {
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => return Ok(self.emit_current_token()),
+                        _ => self.state = TokenizerState::BogusDoctype,
+                    }
+                }
+                TokenizerState::Rcdata => {
+                    if eof { return Ok(self.emit(HtmlToken::Eof)); }
+                    match ch {
+                        '<' => self.state = TokenizerState::RcdataLessThanSign,
+                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
+                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    }
+                }
+                TokenizerState::RcdataLessThanSign => {
+                    if ch == '/' {
+                        self.temp_buffer.clear();
+                        self.state = TokenizerState::RcdataEndTagOpen;
+                    } else {
+                        self.reconsume_in(TokenizerState::Rcdata);
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::RcdataEndTagOpen => {
+                    if ch.is_ascii_alphabetic() {
+                        self.create_end_tag();
+                        self.reconsume_in(TokenizerState::RcdataEndTagName);
+                    } else {
+                        self.reconsume_in(TokenizerState::Rcdata);
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::RcdataEndTagName => {
+                    let mut is_match = false;
+                    if let Some(HtmlToken::EndTag { ref name }) = self.current_token {
+                        is_match = name.eq_ignore_ascii_case(&self.last_start_tag);
+                    }
+                    if ch.is_ascii_whitespace() && is_match {
+                        self.state = TokenizerState::BeforeAttributeName;
+                    } else if ch == '/' && is_match {
+                        self.state = TokenizerState::SelfClosingStartTag;
+                    } else if ch == '>' && is_match {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if ch.is_ascii_alphabetic() {
+                        if let Some(HtmlToken::EndTag { ref mut name }) = self.current_token {
+                            name.push(ch.to_ascii_lowercase());
+                            self.temp_buffer.push(ch);
+                        }
+                    } else {
+                        self.state = TokenizerState::Rcdata;
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::Rawtext => {
+                    if eof { return Ok(self.emit(HtmlToken::Eof)); }
+                    match ch {
+                        '<' => self.state = TokenizerState::RawtextLessThanSign,
+                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
+                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    }
+                }
+                TokenizerState::RawtextLessThanSign => {
+                    if ch == '/' {
+                        self.temp_buffer.clear();
+                        self.state = TokenizerState::RawtextEndTagOpen;
+                    } else {
+                        self.reconsume_in(TokenizerState::Rawtext);
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::RawtextEndTagOpen => {
+                    if ch.is_ascii_alphabetic() {
+                        self.create_end_tag();
+                        self.reconsume_in(TokenizerState::RawtextEndTagName);
+                    } else {
+                        self.reconsume_in(TokenizerState::Rawtext);
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::RawtextEndTagName => {
+                    let mut is_match = false;
+                    if let Some(HtmlToken::EndTag { ref name }) = self.current_token {
+                        is_match = name.eq_ignore_ascii_case(&self.last_start_tag);
+                    }
+                    if ch.is_ascii_whitespace() && is_match {
+                        self.state = TokenizerState::BeforeAttributeName;
+                    } else if ch == '/' && is_match {
+                        self.state = TokenizerState::SelfClosingStartTag;
+                    } else if ch == '>' && is_match {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if ch.is_ascii_alphabetic() {
+                        if let Some(HtmlToken::EndTag { ref mut name }) = self.current_token {
+                            name.push(ch.to_ascii_lowercase());
+                        }
+                    } else {
+                        self.state = TokenizerState::Rawtext;
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                }
+                TokenizerState::Plaintext => {
+                    if eof { return Ok(self.emit(HtmlToken::Eof)); }
+                    match ch {
+                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
+                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    }
+                }
                 _ => {
                     if eof {
                         return Ok(self.emit(HtmlToken::Eof));

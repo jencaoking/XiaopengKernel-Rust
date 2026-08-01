@@ -199,6 +199,22 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Character(c) => self.insert_character(*c),
             HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "table" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InTable;
+            }
+            HtmlToken::StartTag { name, .. } if name == "select" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InSelect;
+            }
+            HtmlToken::StartTag { name, .. } if name == "template" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InTemplate;
+            }
+            HtmlToken::StartTag { name, .. } if name == "frameset" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InFrameset;
+            }
             HtmlToken::StartTag { name, self_closing, .. } => {
                 self.insert_element_with_token(token);
                 if *self_closing || Self::is_void_element(name) {
@@ -212,23 +228,203 @@ impl HtmlTreeBuilder {
         }
     }
 
-    fn process_text(&mut self, _token: &HtmlToken) {}
-    fn process_in_table(&mut self, _token: &HtmlToken) {}
+    fn process_text(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::EndTag { .. } => {
+                self.open_elements.pop();
+                self.insertion_mode = self.original_insertion_mode;
+            }
+            HtmlToken::Eof => {
+                self.open_elements.pop();
+                self.insertion_mode = self.original_insertion_mode;
+            }
+            _ => {}
+        }
+    }
+    fn process_in_table(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(_) => self.insert_character(match token { HtmlToken::Character(c) => *c, _ => unreachable!() }),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "caption" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InCaption;
+            }
+            HtmlToken::StartTag { name, .. } if name == "colgroup" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InColumnGroup;
+            }
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "tbody" | "thead" | "tfoot") => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InTableBody;
+            }
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "td" | "th" | "tr") => {
+                let synthetic = HtmlToken::StartTag { name: "tbody".into(), self_closing: false, attributes: vec![] };
+                self.process_in_table(&synthetic);
+                self.process_in_table_body(token);
+            }
+            HtmlToken::EndTag { name } if name == "table" => {
+                self.pop_until_element("table");
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            _ => self.process_in_body(token),
+        }
+    }
     fn process_in_table_text(&mut self, _token: &HtmlToken) {}
-    fn process_in_caption(&mut self, _token: &HtmlToken) {}
-    fn process_in_column_group(&mut self, _token: &HtmlToken) {}
-    fn process_in_table_body(&mut self, _token: &HtmlToken) {}
-    fn process_in_row(&mut self, _token: &HtmlToken) {}
-    fn process_in_cell(&mut self, _token: &HtmlToken) {}
-    fn process_in_select(&mut self, _token: &HtmlToken) {}
-    fn process_in_select_in_table(&mut self, _token: &HtmlToken) {}
-    fn process_in_template(&mut self, _token: &HtmlToken) {}
-    fn process_after_body(&mut self, _token: &HtmlToken) {}
-    fn process_in_frameset(&mut self, _token: &HtmlToken) {}
-    fn process_after_frameset(&mut self, _token: &HtmlToken) {}
+    fn process_in_caption(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::EndTag { name } if name == "caption" => {
+                self.pop_until_element("caption");
+                self.insertion_mode = InsertionMode::InTable;
+            }
+            _ => self.process_in_body(token),
+        }
+    }
+    fn process_in_column_group(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::StartTag { name, .. } if name == "col" => {
+                self.insert_element_with_token(token);
+                self.open_elements.pop();
+            }
+            HtmlToken::EndTag { name } if name == "colgroup" => {
+                self.pop_until_element("colgroup");
+                self.insertion_mode = InsertionMode::InTable;
+            }
+            _ => {
+                self.pop_until_element("colgroup");
+                self.insertion_mode = InsertionMode::InTable;
+                self.process_in_table(token);
+            }
+        }
+    }
+    fn process_in_table_body(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::StartTag { name, .. } if name == "tr" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InRow;
+            }
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "th" | "td") => {
+                let synthetic = HtmlToken::StartTag { name: "tr".into(), self_closing: false, attributes: vec![] };
+                self.process_in_table_body(&synthetic);
+                self.process_in_row(token);
+            }
+            HtmlToken::EndTag { name } if matches!(name.as_str(), "tbody" | "thead" | "tfoot") => {
+                self.pop_until_element(name);
+                self.insertion_mode = InsertionMode::InTable;
+            }
+            HtmlToken::EndTag { name } if name == "table" => {
+                self.insertion_mode = InsertionMode::InTable;
+                self.process_in_table(token);
+            }
+            _ => self.process_in_table(token),
+        }
+    }
+    fn process_in_row(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "th" | "td") => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::InCell;
+            }
+            HtmlToken::EndTag { name } if name == "tr" => {
+                self.pop_until_element("tr");
+                self.insertion_mode = InsertionMode::InTableBody;
+            }
+            HtmlToken::EndTag { name } if name == "table" => {
+                self.pop_until_element("tr");
+                self.insertion_mode = InsertionMode::InTableBody;
+                self.process_in_table_body(token);
+            }
+            _ => self.process_in_table(token),
+        }
+    }
+    fn process_in_cell(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::EndTag { name } if matches!(name.as_str(), "td" | "th") => {
+                self.pop_until_element(name);
+                self.insertion_mode = InsertionMode::InRow;
+            }
+            HtmlToken::EndTag { name } if matches!(name.as_str(), "tr" | "tbody" | "thead" | "tfoot" | "table") => {
+                self.insertion_mode = InsertionMode::InRow;
+                self.process_in_row(token);
+            }
+            _ => self.process_in_body(token),
+        }
+    }
+    fn process_in_select(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::StartTag { name, .. } if name == "option" => self.insert_element_with_token(token),
+            HtmlToken::StartTag { name, .. } if name == "optgroup" => self.insert_element_with_token(token),
+            HtmlToken::EndTag { name } if name == "option" || name == "optgroup" => self.pop_until_element(name),
+            HtmlToken::EndTag { name } if name == "select" => {
+                self.pop_until_element("select");
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            _ => {}
+        }
+    }
+    fn process_in_select_in_table(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::EndTag { name } if matches!(name.as_str(), "caption" | "table" | "tbody" | "tfoot" | "thead" | "tr" | "td" | "th") => {
+                self.pop_until_element("select");
+                self.insertion_mode = InsertionMode::InBody;
+                self.process_in_body(token);
+            }
+            _ => self.process_in_select(token),
+        }
+    }
+    fn process_in_template(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::EndTag { name } if name == "template" => {
+                self.pop_until_element("template");
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            _ => self.process_in_body(token),
+        }
+    }
+    fn process_after_body(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::EndTag { name } if name == "html" => self.insertion_mode = InsertionMode::AfterAfterBody,
+            HtmlToken::Eof => (),
+            _ => {
+                self.insertion_mode = InsertionMode::InBody;
+                self.process_in_body(token);
+            }
+        }
+    }
+    fn process_in_frameset(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "frameset" => self.insert_element_with_token(token),
+            HtmlToken::StartTag { name, .. } if name == "frame" => {
+                self.insert_element_with_token(token);
+                self.open_elements.pop();
+            }
+            HtmlToken::EndTag { name } if name == "frameset" => {
+                self.pop_until_element("frameset");
+                self.insertion_mode = InsertionMode::AfterFrameset;
+            }
+            _ => {}
+        }
+    }
+    fn process_after_frameset(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::EndTag { name } if name == "html" => self.insertion_mode = InsertionMode::AfterAfterFrameset,
+            _ => {}
+        }
+    }
     fn process_after_after_body(&mut self, _token: &HtmlToken) {}
     fn process_after_after_frameset(&mut self, _token: &HtmlToken) {}
-    fn process_plaintext(&mut self, _token: &HtmlToken) {}
+    fn process_plaintext(&mut self, token: &HtmlToken) {
+        if let HtmlToken::Character(c) = token {
+            self.insert_character(*c);
+        }
+    }
 
     // --- DOM Construction Helpers ---
 
