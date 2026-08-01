@@ -36,4 +36,30 @@ fn test_tree_builder_flow() {
     }
     
     assert_eq!(builder.insertion_mode, InsertionMode::InBody);
+    
+    // Verify tree state
+    let doc = builder.document;
+    let root = doc.root.read().unwrap();
+    let html = root.first_element_child().unwrap();
+    assert_eq!(html.read().unwrap().child_element_count(), 2);
+    
+    let head = html.read().unwrap().first_element_child().unwrap();
+    let head_tag;
+    {
+        let guard = head.read().unwrap();
+        if let xiaopeng_dom::NodeData::Element(ref el) = guard.data {
+            head_tag = el.tag_name.clone();
+        } else { panic!("Expected head"); }
+    }
+    assert_eq!(head_tag, "head");
+    
+    let body = html.read().unwrap().last_element_child().unwrap();
+    let body_tag;
+    {
+        let guard = body.read().unwrap();
+        if let xiaopeng_dom::NodeData::Element(ref el) = guard.data {
+            body_tag = el.tag_name.clone();
+        } else { panic!("Expected body"); }
+    }
+    assert_eq!(body_tag, "body");
 }
