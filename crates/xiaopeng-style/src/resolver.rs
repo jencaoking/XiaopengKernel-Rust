@@ -148,6 +148,43 @@ impl<'a> StyleResolver<'a> {
                     }
                 }
             }
+            "position" => {
+                style.position = match decl.value.as_str() {
+                    "absolute" => crate::computed_style::Position::Absolute,
+                    "relative" => crate::computed_style::Position::Relative,
+                    "fixed" => crate::computed_style::Position::Fixed,
+                    "sticky" => crate::computed_style::Position::Sticky,
+                    _ => crate::computed_style::Position::Static,
+                };
+            }
+            "top" => {
+                if decl.value.ends_with("px") {
+                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
+                        style.top = Some(v);
+                    }
+                }
+            }
+            "bottom" => {
+                if decl.value.ends_with("px") {
+                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
+                        style.bottom = Some(v);
+                    }
+                }
+            }
+            "left" => {
+                if decl.value.ends_with("px") {
+                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
+                        style.left = Some(v);
+                    }
+                }
+            }
+            "right" => {
+                if decl.value.ends_with("px") {
+                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
+                        style.right = Some(v);
+                    }
+                }
+            }
             "z-index" => {
                 if let Ok(v) = decl.value.parse::<i32>() {
                     style.z_index = v;

@@ -27,6 +27,25 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
         _ => Display::Block,
     };
     
+    // Map position
+    style.position = match lbox.style.position {
+        xiaopeng_style::computed_style::Position::Absolute => Position::Absolute,
+        _ => Position::Relative, // Relative in Taffy behaves like static flow if no offsets, but allows offsets.
+    };
+
+    if let Some(top) = lbox.style.top {
+        style.inset.top = LengthPercentageAuto::length(top);
+    }
+    if let Some(bottom) = lbox.style.bottom {
+        style.inset.bottom = LengthPercentageAuto::length(bottom);
+    }
+    if let Some(left) = lbox.style.left {
+        style.inset.left = LengthPercentageAuto::length(left);
+    }
+    if let Some(right) = lbox.style.right {
+        style.inset.right = LengthPercentageAuto::length(right);
+    }
+    
     if let Some(w) = lbox.style.width {
         style.size.width = Dimension::length(w);
     }
