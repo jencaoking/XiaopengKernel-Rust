@@ -19,18 +19,18 @@ fn test_absolute_positioning() {
 
     root.children.push(abs_child);
 
-    layout_flex(&mut root); // Evaluated with Taffy (available space = 1024xMaxContent). 
+    layout_flex(&mut root, 0.0, 0.0); // Evaluated with Taffy (available space = 1024xMaxContent, 0.0, 0.0). 
     // Wait, Taffy doesn't know max height if it's absolute, so the container height might be 0, 
     // and absolute bottom 20px from 0 height means y = 0 - 50 - 20 = -70 ?
     // Let's explicitly give root a height so we can assert properly.
 
     root.style.height = Some(500.0);
     root.style.width = Some(500.0);
-    layout_flex(&mut root);
+    layout_flex(&mut root, 0.0, 0.0);
 
     // Expected position for abs_child:
     // right: 10 -> x = 500(parent) - 100(width) - 10 = 390
-    // bottom: 20 -> y = 500(parent) - 50(height) - 20 = 430
+    // bottom: 20 -> y = 500(parent) - 50(height, 0.0, 0.0) - 20 = 430
     assert_eq!(root.children[0].dimensions.content.x, 390.0);
     assert_eq!(root.children[0].dimensions.content.y, 430.0);
     assert_eq!(root.children[0].dimensions.content.width, 100.0);

@@ -14,9 +14,40 @@ use tracing::info;
 use xiaopeng_common::XiaopengResult;
 use xiaopeng_dom::NodePtr;
 
-pub fn compute_layout() -> XiaopengResult<()> {
-    info!("Computing layout");
-    Ok(())
+pub mod builder;
+pub use builder::build_layout_tree;
+
+pub fn compute_layout(
+    document_node: &NodePtr,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> XiaopengResult<LayoutBox> {
+    info!("Computing layout for viewport {}x{}", viewport_width, viewport_height);
+    
+    // 1. Build layout tree from DOM
+    let mut root_box = build_layout_tree(document_node)
+        .ok_or_else(|| xiaopeng_common::XiaopengError::LayoutError { component: "Builder".into(), message: "Failed to build layout tree".into() })?;
+        
+    // 2. Perform layout passes (starting with block layout on root)
+    layout_box_recursive(&mut root_box, viewport_width, 0.0, 0.0);
+    
+    Ok(root_box)
+}
+
+pub fn layout_box_recursive(
+    node: &mut LayoutBox,
+    containing_block_width: f32,
+    offset_x: f32,
+    offset_y: f32,
+) {
+    use xiaopeng_style::computed_style::Display;
+    
+    match node.style.display {
+        Display::Block => crate::block::layout_block(node, containing_block_width, offset_x, offset_y),
+        Display::Flex => crate::flexbox::layout_flex(node, offset_x, offset_y),
+        Display::Inline => crate::inline::layout_inline(node, containing_block_width, offset_x, offset_y),
+        _ => crate::block::layout_block(node, containing_block_width, offset_x, offset_y),
+    }
 }
 
 /// Hit testing: given an (x, y) coordinate, finds the top-most DOM Node at that position.

@@ -31,7 +31,7 @@ fn test_inline_text_wrapping() {
     // So "Text" moves to Line 3!
     // Line 3: "Text" (32+8), "Wrapping" (64+8) = 112px < 150px
     
-    layout_inline(&mut root, 150.0);
+    layout_inline(&mut root, 150.0, 0.0, 0.0);
 
     // 3 lines * 20px line_height = 60px height.
     assert_eq!(root.dimensions.content.width, 150.0);

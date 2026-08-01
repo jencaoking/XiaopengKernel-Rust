@@ -25,7 +25,7 @@ fn test_block_stacking() {
     root.children.push(c2);
 
     // Run block layout
-    layout_block(&mut root, 800.0);
+    layout_block(&mut root, 800.0, 0.0, 0.0);
 
     // Verify root width
     assert_eq!(root.dimensions.content.width, 800.0);

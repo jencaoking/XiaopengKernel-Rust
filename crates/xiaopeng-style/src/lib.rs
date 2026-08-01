@@ -13,9 +13,26 @@ pub use selector::{Selector, SimpleSelector, Specificity};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
+use xiaopeng_dom::NodePtr;
+
 pub fn init_style() -> XiaopengResult<()> {
     info!("Style module initialized");
     Ok(())
+}
+
+pub fn resolve_style(node: &NodePtr) -> ComputedStyle {
+    // Basic stub: in a real engine, this requires access to the parsed stylesheets.
+    // For now, we return default style, but we might set display to None for elements like <head>.
+    let mut style = ComputedStyle::default();
+    
+    let n = node.read().unwrap();
+    if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
+        if el.tag_name == "head" || el.tag_name == "style" || el.tag_name == "script" || el.tag_name == "title" {
+            style.display = Display::None;
+        }
+    }
+    
+    style
 }
 
 #[cfg(test)]

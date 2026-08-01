@@ -3,7 +3,7 @@ use crate::layout_box::LayoutBox;
 use taffy::prelude::*;
 use xiaopeng_style::computed_style::Display as KernelDisplay;
 
-pub fn layout_flex(node: &mut LayoutBox) {
+pub fn layout_flex(node: &mut LayoutBox, offset_x: f32, offset_y: f32) {
     let mut taffy = TaffyTree::new();
     
     // 1. Build Taffy Tree from our LayoutBox tree
@@ -14,7 +14,7 @@ pub fn layout_flex(node: &mut LayoutBox) {
     taffy.compute_layout(root_node, available_space).unwrap();
 
     // 3. Sync layout results back to LayoutBox
-    sync_taffy_layout(&taffy, root_node, node);
+    sync_taffy_layout(&taffy, root_node, node, offset_x, offset_y);
 }
 
 fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
@@ -63,18 +63,18 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
     taffy.new_with_children(style, &child_nodes).unwrap()
 }
 
-fn sync_taffy_layout(taffy: &TaffyTree, node_id: NodeId, lbox: &mut LayoutBox) {
+fn sync_taffy_layout(taffy: &TaffyTree, node_id: NodeId, lbox: &mut LayoutBox, offset_x: f32, offset_y: f32) {
     let layout = taffy.layout(node_id).unwrap();
     
     // Copy computed geometry back
-    lbox.dimensions.content.x = layout.location.x;
-    lbox.dimensions.content.y = layout.location.y;
+    lbox.dimensions.content.x = offset_x + layout.location.x;
+    lbox.dimensions.content.y = offset_y + layout.location.y;
     lbox.dimensions.content.width = layout.size.width;
     lbox.dimensions.content.height = layout.size.height;
     
     // Recursively sync children
     let child_ids = taffy.children(node_id).unwrap();
     for (i, child) in lbox.children.iter_mut().enumerate() {
-        sync_taffy_layout(taffy, child_ids[i], child);
+        sync_taffy_layout(taffy, child_ids[i], child, lbox.dimensions.content.x, lbox.dimensions.content.y);
     }
 }

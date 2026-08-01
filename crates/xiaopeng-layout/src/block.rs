@@ -3,12 +3,12 @@
 use crate::layout_box::LayoutBox;
 use xiaopeng_style::computed_style::Display;
 
-pub fn layout_block(node: &mut LayoutBox, containing_block_width: f32) {
+pub fn layout_block(node: &mut LayoutBox, containing_block_width: f32, offset_x: f32, offset_y: f32) {
     // 1. Calculate width based on containing block
     calculate_block_width(node, containing_block_width);
 
-    // 2. Calculate initial position
-    calculate_block_position(node);
+    // 2. Calculate absolute position
+    calculate_block_position(node, offset_x, offset_y);
 
     // 3. Layout children
     layout_block_children(node);
@@ -34,37 +34,30 @@ fn calculate_block_width(node: &mut LayoutBox, containing_block_width: f32) {
     node.dimensions.content.width = width;
 }
 
-fn calculate_block_position(node: &mut LayoutBox) {
+fn calculate_block_position(node: &mut LayoutBox, offset_x: f32, offset_y: f32) {
     let d = &mut node.dimensions;
-    // Position x includes parent's padding + node's left margin (stubs for now)
-    d.content.x = d.margin.left + d.padding.left;
-    d.content.y = d.margin.top + d.padding.top;
+    // Absolute position x includes parent's absolute x + node's left margin + parent's padding/border (passed as offset_x)
+    d.content.x = offset_x + d.margin.left;
+    d.content.y = offset_y + d.margin.top;
 }
 
 fn layout_block_children(node: &mut LayoutBox) {
     let d = &mut node.dimensions;
-    let mut current_y = 0.0;
+    let mut current_y = d.content.y; // Start at parent's absolute content Y
     
     let parent_content_width = d.content.width;
+    let parent_content_x = d.content.x;
 
     for child in &mut node.children {
-        if child.style.display == Display::Block {
-            // First, run the layout for the child to calculate its width, height, and intrinsic padding/margin offsets.
-            layout_block(child, parent_content_width);
-            
-            // Now position the child vertically based on the previous children
-            // The child's y position relative to the parent's content box is:
-            // current_y + the child's top margin, border, and padding.
-            // Wait, content.y represents the origin of the CONTENT box relative to parent's content box.
-            child.dimensions.content.y = current_y + child.dimensions.margin.top + child.dimensions.border.top + child.dimensions.padding.top;
-            
-            // Advance current_y by the child's total height (including margins)
-            current_y += child.dimensions.margin_box().height;
-        } else {
-            layout_block(child, parent_content_width);
-            child.dimensions.content.y = current_y;
-            current_y += child.dimensions.margin_box().height;
-        }
+        crate::layout_box_recursive(
+            child, 
+            parent_content_width, 
+            parent_content_x, // offset_x for child is parent's content x
+            current_y         // offset_y for child is the current vertical cursor
+        );
+        
+        // Advance current_y by the child's total height (margin box)
+        current_y += child.dimensions.margin_box().height;
     }
 }
 

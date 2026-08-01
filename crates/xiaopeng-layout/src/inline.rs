@@ -2,9 +2,9 @@
 
 use crate::layout_box::{LayoutBox, BoxType};
 
-pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32) {
-    let mut current_x = 0.0;
-    let mut current_y = 0.0;
+pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32, offset_x: f32, offset_y: f32) {
+    let mut current_x = offset_x;
+    let mut current_y = offset_y;
     let mut max_line_height = 0.0;
 
     // A very simple font metric stub
@@ -21,8 +21,8 @@ pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32) {
                     let space_width = char_width; // Space between words
 
                     // Wrap if word doesn't fit on this line (unless it's the first word on the line)
-                    if current_x + word_width > containing_block_width && current_x > 0.0 {
-                        current_x = 0.0;
+                    if current_x - offset_x + word_width > containing_block_width && current_x > offset_x {
+                        current_x = offset_x;
                         current_y += line_height;
                     }
 
@@ -35,7 +35,7 @@ pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32) {
             }
             BoxType::InlineNode => {
                 // Layout inline children recursively
-                layout_inline(child, containing_block_width - current_x);
+                layout_inline(child, containing_block_width - (current_x - offset_x), current_x, current_y);
                 // Advance x based on the child's width
                 child.dimensions.content.x = current_x;
                 child.dimensions.content.y = current_y;
@@ -49,6 +49,8 @@ pub fn layout_inline(node: &mut LayoutBox, containing_block_width: f32) {
     }
 
     // Set the container dimensions
+    node.dimensions.content.x = offset_x;
+    node.dimensions.content.y = offset_y;
     node.dimensions.content.width = containing_block_width;
-    node.dimensions.content.height = current_y + max_line_height;
+    node.dimensions.content.height = (current_y - offset_y) + max_line_height;
 }
