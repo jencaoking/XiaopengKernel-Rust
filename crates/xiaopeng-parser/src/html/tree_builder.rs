@@ -52,11 +52,13 @@ pub struct HtmlTreeBuilder {
 
 impl HtmlTreeBuilder {
     pub fn new() -> Self {
+        let document = Document::new();
+        let open_elements = vec![document.root.clone()];
         Self {
-            document: Document::new(),
+            document,
             insertion_mode: InsertionMode::Initial,
             original_insertion_mode: InsertionMode::Initial,
-            open_elements: Vec::new(),
+            open_elements,
             active_formatting_elements: Vec::new(),
             head_element: None,
             form_element: None,
@@ -68,6 +70,74 @@ impl HtmlTreeBuilder {
 
     pub fn process_token(&mut self, token: HtmlToken) {
         trace!(?token, mode = ?self.insertion_mode, "Processing HTML token");
+        
+        // --- Simplified DOM Construction ---
+        match &token {
+            HtmlToken::StartTag { name, self_closing, attributes } => {
+                let mut el_data = xiaopeng_dom::ElementData::new(name.clone());
+                for attr in attributes {
+                    el_data.set_attribute(attr.name.clone(), attr.value.clone());
+                }
+                
+                let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+                
+                if let Some(parent) = self.open_elements.last() {
+                    xiaopeng_dom::Node::append_child(parent, &new_node);
+                }
+                
+                if !self_closing && !Self::is_void_element(name) {
+                    self.open_elements.push(new_node);
+                }
+            }
+            HtmlToken::EndTag { name } => {
+                // Find the matching tag from the bottom of the stack (reverse order)
+                let mut pop_count = 0;
+                let mut found = false;
+                for node in self.open_elements.iter().rev() {
+                    pop_count += 1;
+                    if let xiaopeng_dom::NodeData::Element(ref el) = node.read().unwrap().data {
+                        if el.tag_name == *name {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if found {
+                    for _ in 0..pop_count {
+                        self.open_elements.pop();
+                    }
+                }
+            }
+            HtmlToken::Character(c) => {
+                if !c.is_whitespace() || self.insertion_mode == InsertionMode::InBody {
+                    if let Some(parent) = self.open_elements.last() {
+                        // Check if the last child is a text node, if so append, else create new
+                        let last_child = parent.read().unwrap().last_child();
+                        let mut appended = false;
+                        if let Some(lc) = last_child {
+                            let mut node = lc.write().unwrap();
+                            if let xiaopeng_dom::NodeData::Text(ref mut t) = node.data {
+                                t.push(*c);
+                                appended = true;
+                            }
+                        }
+                        if !appended {
+                            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(c.to_string()));
+                            xiaopeng_dom::Node::append_child(parent, &new_node);
+                        }
+                    }
+                }
+            }
+            HtmlToken::Comment(data) => {
+                let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Comment(data.clone()));
+                if let Some(parent) = self.open_elements.last() {
+                    xiaopeng_dom::Node::append_child(parent, &new_node);
+                }
+            }
+            _ => {}
+        }
+        
+        // Mode transition simulation
         match self.insertion_mode {
             InsertionMode::Initial => self.process_initial(&token),
             InsertionMode::BeforeHtml => self.process_before_html(&token),
@@ -149,6 +219,13 @@ impl HtmlTreeBuilder {
 
     pub fn insert_element(&mut self, _tag_name: &str) {
         debug!("Inserting element: {}", _tag_name);
+    }
+    
+    fn is_void_element(name: &str) -> bool {
+        matches!(
+            name,
+            "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr"
+        )
     }
 }
 
