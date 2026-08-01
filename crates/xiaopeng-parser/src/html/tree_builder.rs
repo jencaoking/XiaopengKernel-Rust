@@ -71,73 +71,6 @@ impl HtmlTreeBuilder {
     pub fn process_token(&mut self, token: HtmlToken) {
         trace!(?token, mode = ?self.insertion_mode, "Processing HTML token");
         
-        // --- Simplified DOM Construction ---
-        match &token {
-            HtmlToken::StartTag { name, self_closing, attributes } => {
-                let mut el_data = xiaopeng_dom::ElementData::new(name.clone());
-                for attr in attributes {
-                    el_data.set_attribute(attr.name.clone(), attr.value.clone());
-                }
-                
-                let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
-                
-                if let Some(parent) = self.open_elements.last() {
-                    xiaopeng_dom::Node::append_child(parent, &new_node);
-                }
-                
-                if !self_closing && !Self::is_void_element(name) {
-                    self.open_elements.push(new_node);
-                }
-            }
-            HtmlToken::EndTag { name } => {
-                // Find the matching tag from the bottom of the stack (reverse order)
-                let mut pop_count = 0;
-                let mut found = false;
-                for node in self.open_elements.iter().rev() {
-                    pop_count += 1;
-                    if let xiaopeng_dom::NodeData::Element(ref el) = node.read().unwrap().data {
-                        if el.tag_name == *name {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if found {
-                    for _ in 0..pop_count {
-                        self.open_elements.pop();
-                    }
-                }
-            }
-            HtmlToken::Character(c) => {
-                if !c.is_whitespace() || self.insertion_mode == InsertionMode::InBody {
-                    if let Some(parent) = self.open_elements.last() {
-                        // Check if the last child is a text node, if so append, else create new
-                        let last_child = parent.read().unwrap().last_child();
-                        let mut appended = false;
-                        if let Some(lc) = last_child {
-                            let mut node = lc.write().unwrap();
-                            if let xiaopeng_dom::NodeData::Text(ref mut t) = node.data {
-                                t.push(*c);
-                                appended = true;
-                            }
-                        }
-                        if !appended {
-                            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(c.to_string()));
-                            xiaopeng_dom::Node::append_child(parent, &new_node);
-                        }
-                    }
-                }
-            }
-            HtmlToken::Comment(data) => {
-                let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Comment(data.clone()));
-                if let Some(parent) = self.open_elements.last() {
-                    xiaopeng_dom::Node::append_child(parent, &new_node);
-                }
-            }
-            _ => {}
-        }
-        
-        // Mode transition simulation
         match self.insertion_mode {
             InsertionMode::Initial => self.process_initial(&token),
             InsertionMode::BeforeHtml => self.process_before_html(&token),
@@ -168,33 +101,115 @@ impl HtmlTreeBuilder {
 
     // --- Insertion Mode Handlers (Stubs) ---
 
-    fn process_initial(&mut self, _token: &HtmlToken) {
-        // Parse doctype, etc.
-        self.insertion_mode = InsertionMode::BeforeHtml;
+    fn process_initial(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::Doctype { .. } => {
+                self.insertion_mode = InsertionMode::BeforeHtml;
+            }
+            _ => {
+                self.insertion_mode = InsertionMode::BeforeHtml;
+                self.process_before_html(token);
+            }
+        }
     }
 
-    fn process_before_html(&mut self, _token: &HtmlToken) {
-        self.insertion_mode = InsertionMode::BeforeHead;
+    fn process_before_html(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "html" => {
+                self.insert_element_with_token(token);
+                self.insertion_mode = InsertionMode::BeforeHead;
+            }
+            _ => {
+                self.insert_html_element();
+                self.insertion_mode = InsertionMode::BeforeHead;
+                self.process_before_head(token);
+            }
+        }
     }
 
-    fn process_before_head(&mut self, _token: &HtmlToken) {
-        self.insertion_mode = InsertionMode::InHead;
+    fn process_before_head(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => return,
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "head" => {
+                self.insert_element_with_token(token);
+                self.head_element = self.open_elements.last().cloned();
+                self.insertion_mode = InsertionMode::InHead;
+            }
+            _ => {
+                self.insert_head_element();
+                self.insertion_mode = InsertionMode::InHead;
+                self.process_in_head(token);
+            }
+        }
     }
 
-    fn process_in_head(&mut self, _token: &HtmlToken) {
-        self.insertion_mode = InsertionMode::AfterHead;
+    fn process_in_head(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "base" | "basefont" | "bgsound" | "link" | "meta") => {
+                self.insert_element_with_token(token);
+                self.open_elements.pop(); // Pop immediately because they are void
+            }
+            HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "title" | "style" | "script" | "noscript") => {
+                self.insert_element_with_token(token);
+            }
+            HtmlToken::EndTag { name } if name == "head" => {
+                self.open_elements.pop();
+                self.insertion_mode = InsertionMode::AfterHead;
+            }
+            HtmlToken::EndTag { name } if matches!(name.as_str(), "title" | "style" | "script" | "noscript") => {
+                self.open_elements.pop();
+            }
+            _ => {
+                self.open_elements.pop();
+                self.insertion_mode = InsertionMode::AfterHead;
+                self.process_after_head(token);
+            }
+        }
     }
 
     fn process_in_head_noscript(&mut self, _token: &HtmlToken) {
         self.insertion_mode = InsertionMode::InHead;
     }
 
-    fn process_after_head(&mut self, _token: &HtmlToken) {
-        self.insertion_mode = InsertionMode::InBody;
+    fn process_after_head(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, .. } if name == "body" => {
+                self.insert_element_with_token(token);
+                self.frameset_ok = false;
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            _ => {
+                self.insert_body_element();
+                self.insertion_mode = InsertionMode::InBody;
+                self.process_in_body(token);
+            }
+        }
     }
 
-    fn process_in_body(&mut self, _token: &HtmlToken) {
-        // Handles most elements
+    fn process_in_body(&mut self, token: &HtmlToken) {
+        match token {
+            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::StartTag { name, self_closing, .. } => {
+                self.insert_element_with_token(token);
+                if *self_closing || Self::is_void_element(name) {
+                    self.open_elements.pop();
+                }
+            }
+            HtmlToken::EndTag { name } => {
+                self.pop_until_element(name);
+            }
+            _ => {}
+        }
     }
 
     fn process_text(&mut self, _token: &HtmlToken) {}
@@ -215,7 +230,98 @@ impl HtmlTreeBuilder {
     fn process_after_after_frameset(&mut self, _token: &HtmlToken) {}
     fn process_plaintext(&mut self, _token: &HtmlToken) {}
 
-    // --- DOM Construction Helpers (Stubs) ---
+    // --- DOM Construction Helpers ---
+
+    pub fn insert_element_with_token(&mut self, token: &HtmlToken) {
+        if let HtmlToken::StartTag { name, attributes, .. } = token {
+            let mut el_data = xiaopeng_dom::ElementData::new(name.clone());
+            for attr in attributes {
+                el_data.set_attribute(attr.name.clone(), attr.value.clone());
+            }
+            
+            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+            
+            if let Some(parent) = self.open_elements.last() {
+                xiaopeng_dom::Node::append_child(parent, &new_node);
+            }
+            
+            self.open_elements.push(new_node);
+        }
+    }
+
+    pub fn insert_html_element(&mut self) {
+        let el_data = xiaopeng_dom::ElementData::new("html".into());
+        let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+        if let Some(parent) = self.open_elements.last() {
+            xiaopeng_dom::Node::append_child(parent, &new_node);
+        }
+        self.open_elements.push(new_node);
+    }
+    
+    pub fn insert_head_element(&mut self) {
+        let el_data = xiaopeng_dom::ElementData::new("head".into());
+        let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+        if let Some(parent) = self.open_elements.last() {
+            xiaopeng_dom::Node::append_child(parent, &new_node);
+        }
+        self.head_element = Some(new_node.clone());
+        self.open_elements.push(new_node);
+    }
+
+    pub fn insert_body_element(&mut self) {
+        let el_data = xiaopeng_dom::ElementData::new("body".into());
+        let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+        if let Some(parent) = self.open_elements.last() {
+            xiaopeng_dom::Node::append_child(parent, &new_node);
+        }
+        self.open_elements.push(new_node);
+    }
+
+    pub fn insert_character(&mut self, c: char) {
+        if let Some(parent) = self.open_elements.last() {
+            let last_child = parent.read().unwrap().last_child();
+            let mut appended = false;
+            if let Some(lc) = last_child {
+                let mut node = lc.write().unwrap();
+                if let xiaopeng_dom::NodeData::Text(ref mut t) = node.data {
+                    t.push(c);
+                    appended = true;
+                }
+            }
+            if !appended {
+                let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(c.to_string()));
+                xiaopeng_dom::Node::append_child(parent, &new_node);
+            }
+        }
+    }
+
+    pub fn insert_comment(&mut self, token: &HtmlToken) {
+        if let HtmlToken::Comment(data) = token {
+            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Comment(data.clone()));
+            if let Some(parent) = self.open_elements.last() {
+                xiaopeng_dom::Node::append_child(parent, &new_node);
+            }
+        }
+    }
+    
+    pub fn pop_until_element(&mut self, name: &str) {
+        let mut pop_count = 0;
+        let mut found = false;
+        for node in self.open_elements.iter().rev() {
+            pop_count += 1;
+            if let xiaopeng_dom::NodeData::Element(ref el) = node.read().unwrap().data {
+                if el.tag_name == name {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            for _ in 0..pop_count {
+                self.open_elements.pop();
+            }
+        }
+    }
 
     pub fn insert_element(&mut self, _tag_name: &str) {
         debug!("Inserting element: {}", _tag_name);
