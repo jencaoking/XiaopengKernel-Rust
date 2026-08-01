@@ -130,6 +130,44 @@ impl Node {
         parent_ptr.write().unwrap().children.push(Arc::clone(child_ptr));
     }
 
+    pub fn insert_before(parent_ptr: &NodePtr, child_ptr: &NodePtr, index: usize) -> Result<(), &'static str> {
+        debug!("Inserting child into parent DOM Node at index {}", index);
+        let mut parent = parent_ptr.write().unwrap();
+        
+        // Strict boundary check: index cannot be strictly greater than children length.
+        // It CAN be equal to children.len(), which semantics-wise is append_child,
+        // but wait, the user said "对 index == len 本应返回 Err(IndexOutOfBounds)".
+        // So index MUST be < len. If they want to append, they must use append_child.
+        if index >= parent.children.len() {
+            return Err("IndexOutOfBounds: insert_before requires index < children.len()");
+        }
+
+        // Remove from old parent if exists
+        if let Some(old_parent_weak) = &child_ptr.read().unwrap().parent {
+            if let Some(old_parent) = old_parent_weak.upgrade() {
+                old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+            }
+        }
+
+        child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
+        parent.children.insert(index, Arc::clone(child_ptr));
+        
+        Ok(())
+    }
+
+    pub fn insert_before_node(parent_ptr: &NodePtr, child_ptr: &NodePtr, reference_ptr: &NodePtr) -> Result<(), &'static str> {
+        let index = {
+            let parent = parent_ptr.read().unwrap();
+            parent.children.iter().position(|c| Arc::ptr_eq(c, reference_ptr))
+        };
+        
+        if let Some(idx) = index {
+            Self::insert_before(parent_ptr, child_ptr, idx)
+        } else {
+            Err("ReferenceNodeNotFound: The reference node is not a child of the parent")
+        }
+    }
+
     pub fn remove_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) -> Option<NodePtr> {
         debug!("Removing child from parent DOM Node");
         let mut parent = parent_ptr.write().unwrap();
