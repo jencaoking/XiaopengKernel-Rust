@@ -54,6 +54,31 @@ impl ElementData {
             .map(|c| c.split_whitespace().collect())
             .unwrap_or_default()
     }
+
+    pub fn has_class(&self, class_name: &str) -> bool {
+        self.classes().contains(&class_name)
+    }
+
+    pub fn add_class(&mut self, class_name: &str) {
+        if !self.has_class(class_name) {
+            let current = self.get_attribute("class").cloned().unwrap_or_default();
+            let new_class = if current.is_empty() {
+                class_name.to_string()
+            } else {
+                format!("{} {}", current, class_name)
+            };
+            self.set_attribute("class".into(), new_class);
+        }
+    }
+
+    pub fn remove_class(&mut self, class_name: &str) {
+        let classes: Vec<&str> = self.classes().into_iter().filter(|c| *c != class_name).collect();
+        if classes.is_empty() {
+            self.remove_attribute("class");
+        } else {
+            self.set_attribute("class".into(), classes.join(" "));
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +164,85 @@ impl Node {
 
     pub fn last_child(&self) -> Option<NodePtr> {
         self.children.last().cloned()
+    }
+
+    pub fn first_element_child(&self) -> Option<NodePtr> {
+        self.children.iter().find(|c| c.read().unwrap().node_type() == NodeType::Element).cloned()
+    }
+
+    pub fn last_element_child(&self) -> Option<NodePtr> {
+        self.children.iter().rev().find(|c| c.read().unwrap().node_type() == NodeType::Element).cloned()
+    }
+
+    pub fn next_element_sibling(node_ptr: &NodePtr) -> Option<NodePtr> {
+        let parent = {
+            let node = node_ptr.read().unwrap();
+            node.parent.as_ref().and_then(|w| w.upgrade())
+        };
+        if let Some(parent) = parent {
+            let p = parent.read().unwrap();
+            let pos = p.children.iter().position(|c| Arc::ptr_eq(c, node_ptr))?;
+            for sibling in p.children.iter().skip(pos + 1) {
+                if sibling.read().unwrap().node_type() == NodeType::Element {
+                    return Some(Arc::clone(sibling));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn previous_element_sibling(node_ptr: &NodePtr) -> Option<NodePtr> {
+        let parent = {
+            let node = node_ptr.read().unwrap();
+            node.parent.as_ref().and_then(|w| w.upgrade())
+        };
+        if let Some(parent) = parent {
+            let p = parent.read().unwrap();
+            let pos = p.children.iter().position(|c| Arc::ptr_eq(c, node_ptr))?;
+            for sibling in p.children.iter().take(pos).rev() {
+                if sibling.read().unwrap().node_type() == NodeType::Element {
+                    return Some(Arc::clone(sibling));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn child_element_count(&self) -> usize {
+        self.children.iter().filter(|c| c.read().unwrap().node_type() == NodeType::Element).count()
+    }
+
+    pub fn clone_node(node_ptr: &NodePtr, deep: bool) -> NodePtr {
+        let node = node_ptr.read().unwrap();
+        let cloned_data = node.data.clone();
+        let new_node = Node::new(cloned_data);
+        
+        if deep {
+            for child in &node.children {
+                let cloned_child = Self::clone_node(child, true);
+                Node::append_child(&new_node, &cloned_child);
+            }
+        }
+        new_node
+    }
+
+    pub fn to_html(node_ptr: &NodePtr) -> String {
+        let node = node_ptr.read().unwrap();
+        match &node.data {
+            NodeData::Document => {
+                node.children.iter().map(Self::to_html).collect::<Vec<_>>().join("")
+            }
+            NodeData::Element(el) => {
+                let mut attrs = String::new();
+                for (k, v) in &el.attributes {
+                    attrs.push_str(&format!(" {}=\"{}\"", k, v));
+                }
+                let children_html = node.children.iter().map(Self::to_html).collect::<Vec<_>>().join("");
+                format!("<{}{}>{}</{}>", el.tag_name, attrs, children_html, el.tag_name)
+            }
+            NodeData::Text(t) => t.clone(),
+            NodeData::Comment(c) => format!("<!--{}-->", c),
+        }
     }
 
     /// Recursively searches for an element with the given ID.
