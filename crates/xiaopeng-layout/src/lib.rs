@@ -4,10 +4,12 @@ pub mod block;
 pub mod flexbox;
 pub mod inline;
 pub mod layout_box;
+pub mod stacking;
 
 pub use block::layout_block;
 pub use flexbox::layout_flex;
 pub use layout_box::{Dimensions, EdgeSizes, LayoutBox};
+pub use stacking::StackingContext;
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 

@@ -148,6 +148,11 @@ impl<'a> StyleResolver<'a> {
                     }
                 }
             }
+            "z-index" => {
+                if let Ok(v) = decl.value.parse::<i32>() {
+                    style.z_index = v;
+                }
+            }
             _ => {}
         }
     }
