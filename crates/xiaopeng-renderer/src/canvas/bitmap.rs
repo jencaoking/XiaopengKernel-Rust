@@ -1,43 +1,60 @@
-//! Software Rasterizer Bitmap Canvas & PPM Exporter
+//! Software Rasterizer Canvas via Tiny-Skia
 
+use tiny_skia::{Color as SkiaColor, Paint, Pixmap, Rect as SkiaRect, Transform};
 use xiaopeng_common::{Color, Rect};
 
 pub struct BitmapCanvas {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<Color>,
+    pub pixmap: Pixmap,
 }
 
 impl BitmapCanvas {
     pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            pixels: vec![Color::WHITE; (width * height) as usize],
-        }
+        let mut pixmap = Pixmap::new(width, height).expect("Failed to create tiny-skia pixmap");
+        pixmap.fill(SkiaColor::WHITE);
+        Self { pixmap }
     }
 
     pub fn fill_rect(&mut self, rect: Rect, color: Color) {
-        let x_start = rect.x.max(0.0) as u32;
-        let y_start = rect.y.max(0.0) as u32;
-        let x_end = (rect.x + rect.width).min(self.width as f32) as u32;
-        let y_end = (rect.y + rect.height).min(self.height as f32) as u32;
+        if rect.width <= 0.0 || rect.height <= 0.0 {
+            return;
+        }
 
-        for y in y_start..y_end {
-            for x in x_start..x_end {
-                let idx = (y * self.width + x) as usize;
-                if idx < self.pixels.len() {
-                    self.pixels[idx] = color;
-                }
+        let skia_rect = SkiaRect::from_xywh(rect.x, rect.y, rect.width, rect.height);
+        if let Some(r) = skia_rect {
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+            paint.anti_alias = true;
+            
+            self.pixmap.fill_rect(r, &paint, Transform::identity(), None);
+        }
+    }
+
+    /// Draws a border around a rectangle.
+    pub fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32) {
+        if rect.width <= 0.0 || rect.height <= 0.0 || width <= 0.0 {
+            return;
+        }
+
+        let skia_rect = SkiaRect::from_xywh(rect.x, rect.y, rect.width, rect.height);
+        if let Some(r) = skia_rect {
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+            paint.anti_alias = true;
+            
+            let stroke = tiny_skia::Stroke {
+                width,
+                ..Default::default()
+            };
+            
+            let mut pb = tiny_skia::PathBuilder::new();
+            pb.push_rect(r);
+            if let Some(path) = pb.finish() {
+                self.pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }
         }
     }
 
-    pub fn export_ppm(&self) -> String {
-        let mut ppm = format!("P3\n{} {}\n255\n", self.width, self.height);
-        for color in &self.pixels {
-            ppm.push_str(&format!("{} {} {} ", color.r, color.g, color.b));
-        }
-        ppm
+    pub fn export_png(&self, path: &str) -> Result<(), String> {
+        self.pixmap.save_png(path).map_err(|e| e.to_string())
     }
 }

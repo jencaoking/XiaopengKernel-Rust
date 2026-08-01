@@ -8,3 +8,7 @@ license.workspace = true
 xiaopeng-common.workspace = true
 xiaopeng-layout.workspace = true
 tracing.workspace = true
+tiny-skia = "0.12.0"
+
+[dev-dependencies]
+xiaopeng-style.workspace = true
