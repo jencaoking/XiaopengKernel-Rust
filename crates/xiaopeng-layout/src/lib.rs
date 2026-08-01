@@ -2,6 +2,7 @@
 
 pub mod block;
 pub mod flexbox;
+pub mod inline;
 pub mod layout_box;
 
 pub use block::layout_block;
@@ -22,7 +23,7 @@ mod tests {
 
     #[test]
     fn test_layout_box_creation() {
-        let lbox = LayoutBox::new(ComputedStyle::default());
+        let lbox = LayoutBox::new(ComputedStyle::default(), layout_box::BoxType::BlockNode);
         assert_eq!(lbox.children.len(), 0);
     }
 }

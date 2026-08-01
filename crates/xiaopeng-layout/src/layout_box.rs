@@ -50,19 +50,29 @@ impl Dimensions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoxType {
+    BlockNode,
+    InlineNode,
+    AnonymousBlock,
+    TextNode(String),
+}
+
 #[derive(Debug)]
 pub struct LayoutBox {
     pub dimensions: Dimensions,
     pub style: ComputedStyle,
     pub children: Vec<LayoutBox>,
+    pub box_type: BoxType,
 }
 
 impl LayoutBox {
-    pub fn new(style: ComputedStyle) -> Self {
+    pub fn new(style: ComputedStyle, box_type: BoxType) -> Self {
         Self {
             dimensions: Dimensions::default(),
             style,
             children: Vec::new(),
+            box_type,
         }
     }
 }
