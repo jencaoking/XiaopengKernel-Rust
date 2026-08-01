@@ -1,6 +1,6 @@
 //! CSS Parser
 
-use crate::selector::{Combinator, Selector, SelectorType, SimpleSelector};
+use crate::selector::{Combinator, Selector, SelectorType, SimpleSelector, AttributeOperator};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Declaration {
@@ -158,20 +158,100 @@ impl<'a> CssParser<'a> {
                 Some('.') => {
                     self.consume_char();
                     let class_name = self.consume_ident();
-                    parts.push(SimpleSelector { selector_type: SelectorType::Class, value: class_name });
+                    parts.push(SimpleSelector::new_basic(SelectorType::Class, class_name));
                 }
                 Some('#') => {
                     self.consume_char();
                     let id_name = self.consume_ident();
-                    parts.push(SimpleSelector { selector_type: SelectorType::Id, value: id_name });
+                    parts.push(SimpleSelector::new_basic(SelectorType::Id, id_name));
                 }
                 Some('*') => {
                     self.consume_char();
-                    parts.push(SimpleSelector { selector_type: SelectorType::Universal, value: "*".into() });
+                    parts.push(SimpleSelector::new_basic(SelectorType::Universal, "*".into()));
+                }
+                Some(':') => {
+                    self.consume_char();
+                    if self.next_char() == Some(':') {
+                        self.consume_char();
+                        let pseudo_elem = self.consume_ident();
+                        parts.push(SimpleSelector::new_basic(SelectorType::PseudoElement, pseudo_elem));
+                    } else {
+                        let pseudo_class = self.consume_ident();
+                        // Handle functional pseudo-classes like :nth-child(...)
+                        let mut value = pseudo_class;
+                        if self.next_char() == Some('(') {
+                            self.consume_char();
+                            value.push('(');
+                            while let Some(c) = self.next_char() {
+                                value.push(self.consume_char().unwrap());
+                                if c == ')' { break; }
+                            }
+                        }
+                        parts.push(SimpleSelector::new_basic(SelectorType::PseudoClass, value));
+                    }
+                }
+                Some('[') => {
+                    self.consume_char();
+                    self.consume_whitespace();
+                    let attr_name = self.consume_ident();
+                    self.consume_whitespace();
+                    
+                    let mut op = AttributeOperator::Exists;
+                    let mut attr_val = None;
+                    
+                    if let Some(c) = self.next_char() {
+                        if c != ']' {
+                            let mut op_str = String::new();
+                            op_str.push(self.consume_char().unwrap());
+                            if self.next_char() == Some('=') {
+                                op_str.push(self.consume_char().unwrap());
+                            }
+                            
+                            op = match op_str.as_str() {
+                                "=" => AttributeOperator::Exact,
+                                "~=" => AttributeOperator::Includes,
+                                "|=" => AttributeOperator::DashMatch,
+                                "^=" => AttributeOperator::Prefix,
+                                "$=" => AttributeOperator::Suffix,
+                                "*=" => AttributeOperator::Substring,
+                                _ => AttributeOperator::Exists, // Fallback
+                            };
+                            
+                            self.consume_whitespace();
+                            let mut val = String::new();
+                            
+                            // Check for quote
+                            let quote = self.next_char();
+                            if quote == Some('"') || quote == Some('\'') {
+                                let q = self.consume_char().unwrap();
+                                while let Some(vc) = self.next_char() {
+                                    if vc == q {
+                                        self.consume_char();
+                                        break;
+                                    }
+                                    val.push(self.consume_char().unwrap());
+                                }
+                            } else {
+                                while let Some(vc) = self.next_char() {
+                                    if vc == ']' || vc.is_whitespace() {
+                                        break;
+                                    }
+                                    val.push(self.consume_char().unwrap());
+                                }
+                            }
+                            attr_val = Some(val);
+                        }
+                    }
+                    
+                    self.consume_whitespace();
+                    if self.next_char() == Some(']') {
+                        self.consume_char();
+                    }
+                    parts.push(SimpleSelector::new_attribute(attr_name, op, attr_val));
                 }
                 Some(c) if c.is_alphabetic() => {
                     let tag_name = self.consume_ident();
-                    parts.push(SimpleSelector { selector_type: SelectorType::Tag, value: tag_name });
+                    parts.push(SimpleSelector::new_basic(SelectorType::Tag, tag_name));
                 }
                 _ => {
                     parsing_part = false;

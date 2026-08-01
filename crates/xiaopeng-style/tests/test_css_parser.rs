@@ -91,3 +91,55 @@ fn test_css_parser_complex_selector() {
     assert_eq!(sel.parts[2].selector_type, SelectorType::Tag);
     assert_eq!(sel.parts[2].value, "p");
 }
+
+#[test]
+fn test_css_parser_attribute_selector() {
+    let css = "input[type=\"text\"] { border: 1px solid black; }";
+    let mut parser = CssParser::new(css);
+    let sheet = parser.parse();
+
+    assert_eq!(sheet.rules.len(), 1);
+    let sel = &sheet.rules[0].selectors[0];
+    
+    assert_eq!(sel.parts.len(), 2);
+    assert_eq!(sel.parts[0].selector_type, SelectorType::Tag);
+    assert_eq!(sel.parts[0].value, "input");
+    
+    assert_eq!(sel.parts[1].selector_type, SelectorType::Attribute);
+    assert_eq!(sel.parts[1].attribute_name, Some("type".into()));
+    assert_eq!(sel.parts[1].attribute_value, Some("text".into()));
+}
+
+#[test]
+fn test_css_parser_pseudo_class() {
+    let css = "a:hover, tr:nth-child(2) { color: red; }";
+    let mut parser = CssParser::new(css);
+    let sheet = parser.parse();
+
+    assert_eq!(sheet.rules.len(), 1);
+    assert_eq!(sheet.rules[0].selectors.len(), 2);
+    
+    let sel1 = &sheet.rules[0].selectors[0];
+    assert_eq!(sel1.parts.len(), 2);
+    assert_eq!(sel1.parts[1].selector_type, SelectorType::PseudoClass);
+    assert_eq!(sel1.parts[1].value, "hover");
+    
+    let sel2 = &sheet.rules[0].selectors[1];
+    assert_eq!(sel2.parts.len(), 2);
+    assert_eq!(sel2.parts[1].selector_type, SelectorType::PseudoClass);
+    assert_eq!(sel2.parts[1].value, "nth-child(2)");
+}
+
+#[test]
+fn test_css_parser_pseudo_element() {
+    let css = "p::before { content: 'hello'; }";
+    let mut parser = CssParser::new(css);
+    let sheet = parser.parse();
+
+    assert_eq!(sheet.rules.len(), 1);
+    let sel = &sheet.rules[0].selectors[0];
+    
+    assert_eq!(sel.parts.len(), 2);
+    assert_eq!(sel.parts[1].selector_type, SelectorType::PseudoElement);
+    assert_eq!(sel.parts[1].value, "before");
+}

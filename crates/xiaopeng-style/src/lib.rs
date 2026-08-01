@@ -24,9 +24,9 @@ mod tests {
     fn test_specificity() {
         let sel = Selector {
             parts: vec![
-                selector::SimpleSelector { selector_type: selector::SelectorType::Id, value: "header".into() },
-                selector::SimpleSelector { selector_type: selector::SelectorType::Class, value: "btn".into() },
-                selector::SimpleSelector { selector_type: selector::SelectorType::Tag, value: "button".into() },
+                selector::SimpleSelector::new_basic(selector::SelectorType::Id, "header".into()),
+                selector::SimpleSelector::new_basic(selector::SelectorType::Class, "btn".into()),
+                selector::SimpleSelector::new_basic(selector::SelectorType::Tag, "button".into()),
             ],
             combinators: vec![selector::Combinator::None, selector::Combinator::None],
         };
