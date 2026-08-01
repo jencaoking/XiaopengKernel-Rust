@@ -38,6 +38,16 @@ impl Dimensions {
             p_box.height + self.border.top + self.border.bottom,
         )
     }
+
+    pub fn margin_box(&self) -> Rect {
+        let b_box = self.border_box();
+        Rect::new(
+            b_box.x - self.margin.left,
+            b_box.y - self.margin.top,
+            b_box.width + self.margin.left + self.margin.right,
+            b_box.height + self.margin.top + self.margin.bottom,
+        )
+    }
 }
 
 #[derive(Debug)]
