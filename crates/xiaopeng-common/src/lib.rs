@@ -3,12 +3,22 @@ pub mod logger;
 pub mod types;
 
 pub use error::{XiaopengError, XiaopengResult, XiaopengResultExt};
-pub use logger::init_logging;
+pub use logger::{init_logging, init_logging_with_config, LoggerConfig};
 pub use types::{Color, Point, Rect, Size};
+
+// Re-export常用 tracing 宏
+pub use tracing::{debug, error, info, instrument, trace, warn};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_logger_config_default() {
+        let cfg = LoggerConfig::default();
+        assert_eq!(cfg.default_level, "info,xiaopeng=debug");
+        assert!(cfg.show_thread_ids);
+    }
 
     #[test]
     fn test_error_formatting() {
