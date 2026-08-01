@@ -44,7 +44,7 @@ pub enum TokenizerState {
     AttributeValueDoubleQuoted,
     AttributeValueSingleQuoted,
     AttributeValueUnquoted,
-    AfterAttributeValueQuoted,
+    AfterAttributeValue,
     SelfClosingStartTag,
     BogusComment,
     MarkupDeclarationOpen,
@@ -160,11 +160,53 @@ impl<'a> HtmlTokenizer<'a> {
         });
     }
 
-    #[allow(dead_code)]
     fn create_end_tag(&mut self) {
         self.current_token = Some(HtmlToken::EndTag {
             name: String::new(),
         });
+    }
+
+    fn push_new_attribute(&mut self) {
+        if let Some(attr) = self.current_attribute.take() {
+            match &mut self.current_token {
+                Some(HtmlToken::StartTag { attributes, .. }) => {
+                    attributes.push(attr);
+                }
+                _ => {}
+            }
+        }
+        self.current_attribute = Some(Attribute {
+            name: String::new(),
+            value: String::new(),
+        });
+    }
+
+    fn append_to_attribute_name(&mut self, c: char) {
+        if let Some(ref mut attr) = self.current_attribute {
+            attr.name.push(c.to_ascii_lowercase());
+        }
+    }
+
+    fn append_to_attribute_value(&mut self, c: char) {
+        if let Some(ref mut attr) = self.current_attribute {
+            attr.value.push(c);
+        }
+    }
+    
+    fn emit_current_token(&mut self) -> Option<HtmlToken> {
+        if let Some(attr) = self.current_attribute.take() {
+            match &mut self.current_token {
+                Some(HtmlToken::StartTag { attributes, .. }) => {
+                    attributes.push(attr);
+                }
+                _ => {}
+            }
+        }
+        let token = self.current_token.take().unwrap();
+        if let HtmlToken::StartTag { ref name, .. } = token {
+            self.last_start_tag = name.clone();
+        }
+        self.emit(token)
     }
 
     fn append_to_tag_name(&mut self, c: char) {
@@ -244,13 +286,167 @@ impl<'a> HtmlTokenizer<'a> {
                         _ => self.append_to_tag_name(ch),
                     }
                 }
-                // ... Stubs for other states (they can be filled iteratively)
+                TokenizerState::EndTagOpen => {
+                    if eof {
+                        self.reconsume_in(TokenizerState::Data);
+                        return Ok(self.emit(HtmlToken::Character('<')));
+                    }
+                    match ch {
+                        'a'..='z' | 'A'..='Z' => {
+                            self.create_end_tag();
+                            self.reconsume_in(TokenizerState::TagName);
+                        }
+                        '>' => {
+                            // Parse error
+                            self.state = TokenizerState::Data;
+                        }
+                        _ => {
+                            // Bogus comment
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.reconsume_in(TokenizerState::BogusComment);
+                        }
+                    }
+                }
+                TokenizerState::BeforeAttributeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '/' | '>' => self.reconsume_in(TokenizerState::AfterAttributeName),
+                        '\0' if eof => self.reconsume_in(TokenizerState::AfterAttributeName),
+                        '=' => {
+                            self.push_new_attribute();
+                            self.append_to_attribute_name(ch);
+                            self.state = TokenizerState::AttributeName;
+                        }
+                        _ => {
+                            self.push_new_attribute();
+                            self.reconsume_in(TokenizerState::AttributeName);
+                        }
+                    }
+                }
+                TokenizerState::AttributeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' | '/' | '>' => {
+                            self.reconsume_in(TokenizerState::AfterAttributeName);
+                        }
+                        '\0' if eof => {
+                            self.reconsume_in(TokenizerState::AfterAttributeName);
+                        }
+                        '=' => self.state = TokenizerState::BeforeAttributeValue,
+                        '\0' => self.append_to_attribute_name('\u{FFFD}'),
+                        _ => self.append_to_attribute_name(ch),
+                    }
+                }
+                TokenizerState::AfterAttributeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '/' => self.state = TokenizerState::SelfClosingStartTag,
+                        '=' => self.state = TokenizerState::BeforeAttributeValue,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            self.reconsume_in(TokenizerState::Data);
+                        }
+                        _ => {
+                            self.push_new_attribute();
+                            self.reconsume_in(TokenizerState::AttributeName);
+                        }
+                    }
+                }
+                TokenizerState::BeforeAttributeValue => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '"' => self.state = TokenizerState::AttributeValueDoubleQuoted,
+                        '\'' => self.state = TokenizerState::AttributeValueSingleQuoted,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => self.reconsume_in(TokenizerState::AttributeValueUnquoted),
+                    }
+                }
+                TokenizerState::AttributeValueDoubleQuoted => {
+                    match ch {
+                        '"' => self.state = TokenizerState::AfterAttributeValue,
+                        '\0' => self.append_to_attribute_value('\u{FFFD}'),
+                        _ if eof => return Ok(self.emit_current_token()), // EOF parse error
+                        _ => self.append_to_attribute_value(ch),
+                    }
+                }
+                TokenizerState::AttributeValueSingleQuoted => {
+                    match ch {
+                        '\'' => self.state = TokenizerState::AfterAttributeValue,
+                        '\0' => self.append_to_attribute_value('\u{FFFD}'),
+                        _ if eof => return Ok(self.emit_current_token()),
+                        _ => self.append_to_attribute_value(ch),
+                    }
+                }
+                TokenizerState::AttributeValueUnquoted => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeAttributeName,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        '\0' => self.append_to_attribute_value('\u{FFFD}'),
+                        _ if eof => return Ok(self.emit_current_token()),
+                        _ => self.append_to_attribute_value(ch),
+                    }
+                }
+                TokenizerState::AfterAttributeValue => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeAttributeName,
+                        '/' => self.state = TokenizerState::SelfClosingStartTag,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => return Ok(self.emit_current_token()),
+                        _ => self.reconsume_in(TokenizerState::BeforeAttributeName),
+                    }
+                }
+                TokenizerState::SelfClosingStartTag => {
+                    match ch {
+                        '>' => {
+                            if let Some(HtmlToken::StartTag { ref mut self_closing, .. }) = self.current_token {
+                                *self_closing = true;
+                            }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => return Ok(self.emit_current_token()),
+                        _ => self.reconsume_in(TokenizerState::BeforeAttributeName),
+                    }
+                }
+                TokenizerState::BogusComment => {
+                    match ch {
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            let token = self.current_token.take().unwrap();
+                            return Ok(self.emit(token));
+                        }
+                        '\0' => {
+                            if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                                data.push('\u{FFFD}');
+                            }
+                        }
+                        _ if eof => {
+                            let token = self.current_token.take().unwrap();
+                            return Ok(self.emit(token));
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Comment(ref mut data)) = self.current_token {
+                                data.push(ch);
+                            }
+                        }
+                    }
+                }
+                // ... Stub for rest
                 _ => {
-                    // Fallback stub for unimplemented states
                     if eof {
                         return Ok(self.emit(HtmlToken::Eof));
                     }
-                    debug!("Unimplemented tokenizer state: {:?}", self.state);
                     self.state = TokenizerState::Data;
                 }
             }

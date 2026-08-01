@@ -47,3 +47,28 @@ fn test_tokenizer_simple_start_tag() {
         panic!("Expected StartTag");
     }
 }
+
+#[test]
+fn test_tokenizer_attributes() {
+    let html = "<div id=\"test\" class='foo' disabled>";
+    let mut tokenizer = HtmlTokenizer::new(html);
+
+    let token = tokenizer.next_token().unwrap().unwrap();
+    match token {
+        HtmlToken::StartTag { name, self_closing, attributes } => {
+            assert_eq!(name, "div");
+            assert_eq!(self_closing, false);
+            assert_eq!(attributes.len(), 3);
+            
+            assert_eq!(attributes[0].name, "id");
+            assert_eq!(attributes[0].value, "test");
+            
+            assert_eq!(attributes[1].name, "class");
+            assert_eq!(attributes[1].value, "foo");
+            
+            assert_eq!(attributes[2].name, "disabled");
+            assert_eq!(attributes[2].value, "");
+        }
+        _ => panic!("Expected start tag div"),
+    }
+}
