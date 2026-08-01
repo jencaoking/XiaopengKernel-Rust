@@ -4,7 +4,7 @@ pub mod event;
 pub mod node;
 
 pub use event::{Event, EventPhase};
-pub use node::{ElementData, Node, NodePtr, NodeType};
+pub use node::{ElementData, Node, NodeData, NodePtr, NodeType};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
@@ -16,7 +16,7 @@ impl Document {
     pub fn new() -> Self {
         info!("Initializing DOM Document");
         Self {
-            root: Node::new(NodeType::Document),
+            root: Node::new(NodeData::Document),
         }
     }
 }
@@ -40,8 +40,8 @@ mod tests {
     fn test_document_creation() {
         let doc = Document::new();
         assert!(matches!(
-            doc.root.read().unwrap().node_type,
-            NodeType::Document
+            doc.root.read().unwrap().data,
+            NodeData::Document
         ));
     }
 }
