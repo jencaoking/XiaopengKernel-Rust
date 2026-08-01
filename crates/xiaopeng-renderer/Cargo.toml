@@ -12,6 +12,8 @@ tiny-skia = "0.12.0"
 wgpu = "30.0.0"
 pollster = "1.0.1"
 bytemuck = { version = "1.25.2", features = ["derive"] }
+rustybuzz = "0.20.1"
+swash = "0.2.10"
 
 [dev-dependencies]
 xiaopeng-style.workspace = true

@@ -1,6 +1,7 @@
 //! XiaopengKernel Render Engine & Rasterizer Module
 
 pub mod canvas;
+pub mod font;
 
 pub use canvas::BitmapCanvas;
 pub use canvas::gpu::{GpuCanvas, render_display_list_gpu};
