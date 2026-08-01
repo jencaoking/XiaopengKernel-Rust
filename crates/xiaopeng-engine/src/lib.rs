@@ -1,8 +1,10 @@
 //! XiaopengKernel Core Engine Entry & API
 
 pub mod browsing_context;
+pub mod event_loop;
 
 pub use browsing_context::BrowsingContext;
+pub use event_loop::EventLoop;
 use tracing::{info, instrument};
 use xiaopeng_common::XiaopengResult;
 
@@ -16,6 +18,7 @@ pub struct EngineConfig {
 pub struct BrowserEngine {
     pub config: EngineConfig,
     pub context: BrowsingContext,
+    pub event_loop: EventLoop,
 }
 
 impl BrowserEngine {
@@ -24,6 +27,7 @@ impl BrowserEngine {
         Self {
             config,
             context: BrowsingContext::new(),
+            event_loop: EventLoop::new(),
         }
     }
 
