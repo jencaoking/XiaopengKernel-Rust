@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/xiaopeng-common",
+    "crates/xiaopeng-dom",
+    "crates/xiaopeng-parser",
+    "crates/xiaopeng-style",
+    "crates/xiaopeng-layout",
+    "crates/xiaopeng-renderer",
+    "crates/xiaopeng-net",
+    "crates/xiaopeng-script",
+    "crates/xiaopeng-engine",
+]
+
+[workspace.package]
+version = "0.4.0"
+edition = "2021"
+authors = ["XiaopengKernel Team"]
+license = "CAOSL-2.0"
+
+[workspace.dependencies]
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tokio = { version = "1.43", features = ["full"] }
+url = "2.5"
+
+# Local workspace members
+xiaopeng-common = { path = "crates/xiaopeng-common" }
+xiaopeng-dom = { path = "crates/xiaopeng-dom" }
+xiaopeng-parser = { path = "crates/xiaopeng-parser" }
+xiaopeng-style = { path = "crates/xiaopeng-style" }
+xiaopeng-layout = { path = "crates/xiaopeng-layout" }
+xiaopeng-renderer = { path = "crates/xiaopeng-renderer" }
+xiaopeng-net = { path = "crates/xiaopeng-net" }
+xiaopeng-script = { path = "crates/xiaopeng-script" }

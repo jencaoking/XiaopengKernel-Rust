@@ -1,0 +1,11 @@
+[package]
+name = "xiaopeng-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xiaopeng-common.workspace = true
+xiaopeng-dom.workspace = true
+xiaopeng-style.workspace = true
+tracing.workspace = true

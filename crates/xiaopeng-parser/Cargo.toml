@@ -1,0 +1,10 @@
+[package]
+name = "xiaopeng-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xiaopeng-common.workspace = true
+xiaopeng-dom.workspace = true
+tracing.workspace = true

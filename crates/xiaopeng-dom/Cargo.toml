@@ -1,0 +1,9 @@
+[package]
+name = "xiaopeng-dom"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xiaopeng-common.workspace = true
+tracing.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "xiaopeng-net"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xiaopeng-common.workspace = true
+tokio.workspace = true
+url.workspace = true
+tracing.workspace = true

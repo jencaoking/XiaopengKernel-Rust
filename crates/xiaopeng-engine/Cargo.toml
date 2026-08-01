@@ -1,0 +1,21 @@
+[package]
+name = "xiaopeng-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xiaopengkernel"
+path = "src/main.rs"
+
+[dependencies]
+xiaopeng-common.workspace = true
+xiaopeng-dom.workspace = true
+xiaopeng-parser.workspace = true
+xiaopeng-style.workspace = true
+xiaopeng-layout.workspace = true
+xiaopeng-renderer.workspace = true
+xiaopeng-net.workspace = true
+xiaopeng-script.workspace = true
+tracing.workspace = true
+tokio.workspace = true
