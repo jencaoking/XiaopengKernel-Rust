@@ -9,3 +9,4 @@ xiaopeng-common.workspace = true
 xiaopeng-dom.workspace = true
 tracing.workspace = true
 boa_engine.workspace = true
+lazy_static = "1.5.0"

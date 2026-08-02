@@ -18,6 +18,7 @@ impl JsRuntime {
         register_console(&mut context)?;
         register_timers(&mut context)?;
         register_location(&mut context)?;
+        crate::bindings::dom::register_dom_api(&mut context)?;
 
         info!("JsRuntime initialized with Boa engine");
         Ok(Self { context })
@@ -68,6 +69,10 @@ impl Default for JsRuntime {
     fn default() -> Self {
         Self::new().expect("Failed to create JsRuntime")
     }
+}
+
+pub(crate) fn map_boa_err(e: boa_engine::JsError) -> XiaopengError {
+    XiaopengError::ScriptError { message: format!("{e}") }
 }
 
 // ---------------------------------------------------------------------------

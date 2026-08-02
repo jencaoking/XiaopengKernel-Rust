@@ -44,6 +44,13 @@ impl BrowserEngine {
         info!("BrowserEngine: Triggering HTML document loading pipeline");
         let doc = xiaopeng_parser::parse_html(html_input)?;
 
+        // --- Expose DOM to JS Engine ---
+        let root_id = xiaopeng_script::bindings::dom::expose_node(std::sync::Arc::clone(&doc.root));
+        let init_script = format!("____init_document({});", root_id);
+        if let Err(e) = self.js_runtime.eval(&init_script) {
+            tracing::warn!("Failed to init JS Document bridge: {}", e);
+        }
+
         // --- Execute inline <script> tags ---
         self.run_inline_scripts(&doc.root);
 
