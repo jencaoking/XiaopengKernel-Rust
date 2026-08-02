@@ -357,6 +357,8 @@ impl Node {
     }
 
     pub fn dispatch_event(node_ptr: &NodePtr, event: &mut Event) -> bool {
+        event.target = Some(Arc::clone(node_ptr));
+
         let mut path = Vec::new();
         let mut current = Arc::clone(node_ptr);
         loop {
@@ -372,11 +374,13 @@ impl Node {
         event.phase = EventPhase::CapturingPhase;
         for ptr in path.iter().rev() {
             if event.propagation_stopped { break; }
+            event.current_target = Some(Arc::clone(ptr));
             Self::invoke_listeners(ptr, event);
         }
 
         if !event.propagation_stopped {
             event.phase = EventPhase::AtTarget;
+            event.current_target = Some(Arc::clone(node_ptr));
             Self::invoke_listeners(node_ptr, event);
         }
 
@@ -384,11 +388,13 @@ impl Node {
             event.phase = EventPhase::BubblingPhase;
             for ptr in path.iter() {
                 if event.propagation_stopped { break; }
+                event.current_target = Some(Arc::clone(ptr));
                 Self::invoke_listeners(ptr, event);
             }
         }
 
         event.phase = EventPhase::None;
+        event.current_target = None;
         !event.default_prevented
     }
 

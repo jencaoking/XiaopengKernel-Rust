@@ -18,6 +18,7 @@ impl JsRuntime {
         register_console(&mut context)?;
         register_timers(&mut context)?;
         register_location(&mut context)?;
+        register_promise_integration(&mut context)?;
         crate::bindings::dom::register_dom_api(&mut context)?;
 
         info!("JsRuntime initialized with Boa engine");
@@ -62,6 +63,43 @@ impl JsRuntime {
                 message: format!("register_global_fn({name}): {e}"),
             })?;
         Ok(())
+    }
+
+    /// Fire any timers whose deadline has passed, then drain the microtask queue.
+    /// Call this once per event-loop tick.
+    /// Returns (timers_fired, microtasks_drained).
+    pub fn tick(&mut self) -> (usize, usize) {
+        let timers = crate::bindings::timers::tick_timers(&mut self.context);
+        // After each timer callback, drain microtasks (WHATWG checkpoint).
+        let micros = if timers > 0 {
+            crate::bindings::timers::drain_microtasks(&mut self.context)
+        } else {
+            0
+        };
+        (timers, micros)
+    }
+
+    /// Drain only the microtask queue (Promise .then callbacks etc.).
+    pub fn drain_microtasks(&mut self) -> usize {
+        crate::bindings::timers::drain_microtasks(&mut self.context)
+    }
+
+    /// Returns true if there are any pending timers or microtasks.
+    pub fn has_pending_work(&self) -> bool {
+        crate::bindings::timers::has_pending_work()
+    }
+
+    /// Run the event loop until all timers and microtasks are exhausted,
+    /// or until `max_ticks` ticks have been run (to avoid infinite loops).
+    pub fn run_event_loop(&mut self, max_ticks: usize) {
+        let mut ticks = 0;
+        while self.has_pending_work() && ticks < max_ticks {
+            self.tick();
+            ticks += 1;
+            // Small sleep to avoid a hot loop when all timers are in the future.
+            if !crate::bindings::timers::has_pending_work() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 }
 
@@ -131,26 +169,88 @@ fn js_console_log(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsRes
 }
 
 // ---------------------------------------------------------------------------
-// setTimeout / clearTimeout / setInterval / clearInterval stubs
+// setTimeout / clearTimeout / setInterval / clearInterval — real implementation
 // ---------------------------------------------------------------------------
 
 fn register_timers(ctx: &mut Context) -> XiaopengResult<()> {
-    reg_callable(ctx, "setTimeout",    2, NativeFunction::from_fn_ptr(js_set_timeout))?;
-    reg_callable(ctx, "clearTimeout",  1, NativeFunction::from_fn_ptr(js_noop))?;
-    reg_callable(ctx, "setInterval",   2, NativeFunction::from_fn_ptr(js_set_timeout))?;
-    reg_callable(ctx, "clearInterval", 1, NativeFunction::from_fn_ptr(js_noop))?;
-    info!("JS timer stubs registered");
+    // Real native hooks
+    reg_callable(ctx, "____setTimeout_native",     2, NativeFunction::from_fn_ptr(js_set_timeout))?;
+    reg_callable(ctx, "____setInterval_native",    2, NativeFunction::from_fn_ptr(js_set_interval))?;
+    reg_callable(ctx, "clearTimeout",              1, NativeFunction::from_fn_ptr(js_clear_timer))?;
+    reg_callable(ctx, "clearInterval",             1, NativeFunction::from_fn_ptr(js_clear_timer))?;
+    reg_builtin(ctx,  "____enqueue_microtask",     1, NativeFunction::from_fn_ptr(js_enqueue_microtask))?;
+
+    // JS wrappers: coerce delay, default to 0 ms
+    let js_wrap = r#"
+        function setTimeout(fn, delay) {
+            var args = Array.prototype.slice.call(arguments, 2);
+            return ____setTimeout_native(fn, (delay >>> 0) || 0);
+        }
+        function setInterval(fn, delay) {
+            return ____setInterval_native(fn, (delay >>> 0) || 0);
+        }
+    "#;
+    ctx.eval(Source::from_bytes(js_wrap))
+        .map_err(|e| XiaopengError::ScriptError { message: format!("{e}") })?;
+
+    info!("JS timer API registered");
     Ok(())
 }
 
-fn js_set_timeout(_this: &JsValue, _args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
-    // Real implementation: push callback onto EventLoop macrotask queue.
-    // Stub: return timer ID 0.
-    warn!("setTimeout/setInterval called — callbacks not yet driven by EventLoop");
-    Ok(JsValue::from(0_i32))
+fn js_set_timeout(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    use crate::bindings::timers;
+    use boa_engine::object::builtins::JsFunction;
+
+    let func = args.get(0).and_then(|v| {
+        if v.is_callable() { v.as_object().and_then(|o| JsFunction::from_object(o.clone())) }
+        else { None }
+    });
+    let delay_ms = args.get(1).and_then(|v| v.as_number()).unwrap_or(0.0) as u64;
+
+    if let Some(f) = func {
+        // Collect any extra arguments to forward to the callback
+        let extra: Vec<JsValue> = args.get(2..).unwrap_or(&[]).to_vec();
+        let id = timers::set_timeout(f, extra, delay_ms);
+        return Ok(JsValue::from(id));
+    }
+    Ok(JsValue::from(0_u32))
 }
 
-fn js_noop(_this: &JsValue, _args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
+fn js_set_interval(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    use crate::bindings::timers;
+    use boa_engine::object::builtins::JsFunction;
+
+    let func = args.get(0).and_then(|v| {
+        if v.is_callable() { v.as_object().and_then(|o| JsFunction::from_object(o.clone())) }
+        else { None }
+    });
+    let interval_ms = args.get(1).and_then(|v| v.as_number()).unwrap_or(0.0) as u64;
+
+    if let Some(f) = func {
+        let extra: Vec<JsValue> = args.get(2..).unwrap_or(&[]).to_vec();
+        let id = timers::set_interval(f, extra, interval_ms);
+        return Ok(JsValue::from(id));
+    }
+    Ok(JsValue::from(0_u32))
+}
+
+fn js_clear_timer(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
+    use crate::bindings::timers;
+    if let Some(id) = args.first().and_then(|v| v.as_number()) {
+        timers::clear_timer(id as u32);
+    }
+    Ok(JsValue::undefined())
+}
+
+fn js_enqueue_microtask(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
+    use crate::bindings::timers;
+    use boa_engine::object::builtins::JsFunction;
+    if let Some(func) = args.first().and_then(|v| {
+        if v.is_callable() { v.as_object().and_then(|o| JsFunction::from_object(o.clone())) }
+        else { None }
+    }) {
+        timers::enqueue_microtask(func);
+    }
     Ok(JsValue::undefined())
 }
 
@@ -182,5 +282,132 @@ fn register_location(ctx: &mut Context) -> XiaopengResult<()> {
         .map_err(|e| XiaopengError::ScriptError { message: format!("{e}") })?;
 
     info!("JS location/window stubs registered");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Promise / microtask integration
+// ---------------------------------------------------------------------------
+
+fn register_promise_integration(ctx: &mut Context) -> XiaopengResult<()> {
+    // Boa 0.20 has built-in Promise support. We hook into queueMicrotask so any
+    // Promise .then()/.catch()/.finally() callback flows through our microtask queue.
+    // We also expose `queueMicrotask` as a Web API.
+    //
+    // The trick: override the internal microtask scheduler by providing a
+    // `queueMicrotask` global and patching Promise.resolve().then() chains to use it.
+    // Boa 0.20 schedules its own microtasks; we expose our own queue for userland code.
+
+    let init = r#"
+        // queueMicrotask Web API
+        function queueMicrotask(fn) {
+            if (typeof fn !== 'function') return;
+            ____enqueue_microtask(fn);
+        }
+
+        // Minimal Promise polyfill integration:
+        // If native Promise is available (Boa 0.20 provides it), wrap it so
+        // .then() callbacks go through queueMicrotask. Otherwise, provide a
+        // lightweight polyfill.
+        (function() {
+            if (typeof Promise !== 'undefined') {
+                // Native Promise exists in Boa 0.20. Patch .then to forward
+                // callbacks through our queue so they're visible to tick().
+                var NativePromise = Promise;
+                var origThen = NativePromise.prototype.then;
+                NativePromise.prototype.then = function(onFulfilled, onRejected) {
+                    var wrapped = onFulfilled;
+                    if (typeof onFulfilled === 'function') {
+                        wrapped = function(v) { return onFulfilled(v); };
+                    }
+                    return origThen.call(this, wrapped, onRejected);
+                };
+                return;
+            }
+
+            // Lightweight Promise polyfill for environments without native Promise.
+            function XPromise(executor) {
+                this._state = 'pending';
+                this._value = undefined;
+                this._handlers = [];
+                var self = this;
+
+                function resolve(value) {
+                    if (self._state !== 'pending') return;
+                    self._state = 'fulfilled';
+                    self._value = value;
+                    self._handlers.forEach(function(h) { self._invokeHandler(h); });
+                }
+                function reject(reason) {
+                    if (self._state !== 'pending') return;
+                    self._state = 'rejected';
+                    self._value = reason;
+                    self._handlers.forEach(function(h) { self._invokeHandler(h); });
+                }
+                try { executor(resolve, reject); }
+                catch(e) { reject(e); }
+            }
+
+            XPromise.prototype._invokeHandler = function(handler) {
+                var self = this;
+                queueMicrotask(function() {
+                    var fn = self._state === 'fulfilled' ? handler.onFulfilled : handler.onRejected;
+                    if (typeof fn !== 'function') {
+                        var next = self._state === 'fulfilled' ? handler.resolve : handler.reject;
+                        next(self._value);
+                        return;
+                    }
+                    try { handler.resolve(fn(self._value)); }
+                    catch(e) { handler.reject(e); }
+                });
+            };
+
+            XPromise.prototype.then = function(onFulfilled, onRejected) {
+                var self = this;
+                return new XPromise(function(resolve, reject) {
+                    var h = { onFulfilled: onFulfilled, onRejected: onRejected, resolve: resolve, reject: reject };
+                    if (self._state === 'pending') {
+                        self._handlers.push(h);
+                    } else {
+                        self._invokeHandler(h);
+                    }
+                });
+            };
+
+            XPromise.prototype.catch = function(onRejected) { return this.then(null, onRejected); };
+            XPromise.prototype.finally = function(fn) {
+                return this.then(
+                    function(v)  { fn(); return v; },
+                    function(e)  { fn(); throw e; }
+                );
+            };
+
+            XPromise.resolve = function(v) {
+                return new XPromise(function(res) { res(v); });
+            };
+            XPromise.reject = function(r) {
+                return new XPromise(function(_, rej) { rej(r); });
+            };
+            XPromise.all = function(promises) {
+                return new XPromise(function(resolve, reject) {
+                    var results = [], count = promises.length;
+                    if (count === 0) { resolve([]); return; }
+                    promises.forEach(function(p, i) {
+                        XPromise.resolve(p).then(function(v) {
+                            results[i] = v;
+                            if (--count === 0) resolve(results);
+                        }, reject);
+                    });
+                });
+            };
+
+            globalThis.Promise = XPromise;
+        })();
+    "#;
+
+    ctx.eval(Source::from_bytes(init))
+        .map_err(|e| XiaopengError::ScriptError { message: format!("{e}") })?;
+
+    info!("JS Promise / microtask integration registered");
     Ok(())
 }

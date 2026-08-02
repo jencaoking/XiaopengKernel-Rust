@@ -10,6 +10,8 @@ pub enum EventPhase {
     BubblingPhase,
 }
 
+use crate::node::NodePtr;
+
 #[derive(Clone)]
 pub struct Event {
     pub event_type: String,
@@ -19,6 +21,8 @@ pub struct Event {
     pub propagation_stopped: bool,
     pub immediate_propagation_stopped: bool,
     pub phase: EventPhase,
+    pub target: Option<NodePtr>,
+    pub current_target: Option<NodePtr>,
 }
 
 impl Event {
@@ -31,6 +35,8 @@ impl Event {
             propagation_stopped: false,
             immediate_propagation_stopped: false,
             phase: EventPhase::None,
+            target: None,
+            current_target: None,
         }
     }
 

@@ -19,6 +19,30 @@ impl Document {
             root: Node::new(NodeData::Document),
         }
     }
+
+    pub fn create_element(&self, tag_name: &str) -> NodePtr {
+        Node::new(NodeData::Element(ElementData::new(tag_name.to_string())))
+    }
+
+    pub fn create_text_node(&self, data: &str) -> NodePtr {
+        Node::new(NodeData::Text(data.to_string()))
+    }
+
+    pub fn create_comment(&self, data: &str) -> NodePtr {
+        Node::new(NodeData::Comment(data.to_string()))
+    }
+
+    pub fn get_element_by_id(&self, id: &str) -> Option<NodePtr> {
+        Node::get_element_by_id(&self.root, id)
+    }
+
+    pub fn get_elements_by_tag_name(&self, tag_name: &str) -> Vec<NodePtr> {
+        Node::get_elements_by_tag_name(&self.root, tag_name)
+    }
+
+    pub fn get_elements_by_class_name(&self, class_name: &str) -> Vec<NodePtr> {
+        Node::get_elements_by_class_name(&self.root, class_name)
+    }
 }
 
 impl Default for Document {
