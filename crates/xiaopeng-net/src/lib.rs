@@ -14,6 +14,7 @@ pub mod cache;
 pub mod http1;
 pub mod http2;
 pub mod http3;
+pub mod pool;
 pub mod request;
 pub mod tls;
 
@@ -42,6 +43,19 @@ pub enum ProtocolHint {
     Auto,
 }
 
+use crate::pool::ConnectionPool;
+use http_body_util::Full;
+use bytes::Bytes;
+use hyper::client::conn::http1::SendRequest as H1Send;
+use hyper::client::conn::http2::SendRequest as H2Send;
+use h3::client::SendRequest as H3Send;
+use h3_quinn::OpenStreams;
+use std::time::Duration;
+
+pub type H1PoolType = Arc<Mutex<ConnectionPool<H1Send<Full<Bytes>>>>>;
+pub type H2PoolType = Arc<Mutex<ConnectionPool<H2Send<Full<Bytes>>>>>;
+pub type H3PoolType = Arc<Mutex<ConnectionPool<H3Send<OpenStreams, Bytes>>>>;
+
 /// A browser-style HTTP client that:
 /// - Caches responses with `Cache-Control: max-age`.
 /// - Respects `Alt-Svc` headers to upgrade to HTTP/3 on subsequent requests.
@@ -52,15 +66,26 @@ pub struct NetClient {
     h3_alt_svc: Arc<Mutex<std::collections::HashSet<String>>>,
     protocol_hint: ProtocolHint,
     max_redirects: usize,
+    
+    // Connection Pools
+    h1_pool: H1PoolType,
+    h2_pool: H2PoolType,
+    h3_pool: H3PoolType,
 }
 
 impl NetClient {
     pub fn new() -> Self {
+        let max_conns = 6;
+        let idle_time = Duration::from_secs(60);
+        
         Self {
             cache: Arc::new(Mutex::new(ResourceCache::new(256))),
             h3_alt_svc: Arc::new(Mutex::new(std::collections::HashSet::new())),
             protocol_hint: ProtocolHint::Auto,
             max_redirects: 10,
+            h1_pool: Arc::new(Mutex::new(ConnectionPool::new(max_conns, idle_time))),
+            h2_pool: Arc::new(Mutex::new(ConnectionPool::new(max_conns, idle_time))),
+            h3_pool: Arc::new(Mutex::new(ConnectionPool::new(max_conns, idle_time))),
         }
     }
 
@@ -175,7 +200,7 @@ impl NetClient {
         };
 
         if use_h3 {
-            match http3::send(req).await {
+            match http3::send(req, &self.h3_pool).await {
                 Ok(r) => return Ok(r),
                 Err(e) => {
                     warn!("HTTP/3 failed ({e}), falling back to HTTP/2");
@@ -184,24 +209,24 @@ impl NetClient {
         }
 
         match self.protocol_hint {
-            ProtocolHint::Http1 => http1::send(req).await,
-            ProtocolHint::Http2 => http2::send(req).await,
+            ProtocolHint::Http1 => http1::send(req, &self.h1_pool).await,
+            ProtocolHint::Http2 => http2::send(req, &self.h2_pool).await,
             ProtocolHint::Http3 => {
                 // Already tried H3 above and it failed. Try H2 as fallback.
-                match http2::send(req).await {
+                match http2::send(req, &self.h2_pool).await {
                     Ok(r) => Ok(r),
-                    Err(_) => http1::send(req).await,
+                    Err(_) => http1::send(req, &self.h1_pool).await,
                 }
             }
             ProtocolHint::Auto => {
                 // For HTTPS, try H2 first; fall back to H1.
                 if req.url.starts_with("https://") {
-                    match http2::send(req).await {
+                    match http2::send(req, &self.h2_pool).await {
                         Ok(r) => Ok(r),
-                        Err(_) => http1::send(req).await,
+                        Err(_) => http1::send(req, &self.h1_pool).await,
                     }
                 } else {
-                    http1::send(req).await
+                    http1::send(req, &self.h1_pool).await
                 }
             }
         }

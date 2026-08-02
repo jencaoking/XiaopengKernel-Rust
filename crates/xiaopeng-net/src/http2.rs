@@ -3,7 +3,7 @@
 //! HTTP/2 requires TLS (h2 via ALPN). Plain-text h2c is not commonly used
 //! by browsers, so we only implement HTTPS here. Falls back gracefully.
 
-use bytes::Bytes;
+
 use http_body_util::{BodyExt, Full};
 use hyper::Request as HyperRequest;
 use hyper_util::rt::TokioIo;
@@ -16,8 +16,9 @@ use xiaopeng_common::{XiaopengError, XiaopengResult};
 
 use crate::request::{Headers, HttpVersion, Request, Response};
 use crate::tls::build_tls_config;
+use crate::H2PoolType;
 
-pub async fn send(req: &Request) -> XiaopengResult<Response> {
+pub async fn send(req: &Request, pool: &H2PoolType) -> XiaopengResult<Response> {
     let url = Url::parse(&req.url).map_err(|e| XiaopengError::NetworkError {
         url: req.url.clone(),
         message: format!("invalid URL: {e}"),
@@ -42,41 +43,62 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
 
     info!("HTTP/2 https://{authority}{path}");
 
-    // TLS with ALPN "h2"
-    let mut tls_config = (*build_tls_config()).clone();
-    tls_config.alpn_protocols = vec![b"h2".to_vec()];
+    let host_key = format!("https://{}", authority);
 
-    let connector = TlsConnector::from(Arc::new(tls_config));
-    let tcp = TcpStream::connect(&authority).await.map_err(|e| XiaopengError::NetworkError {
-        url: req.url.clone(),
-        message: format!("TCP connect: {e}"),
-    })?;
-
-    let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("invalid server name: {e}"),
-        })?;
-
-    let tls_stream = connector.connect(server_name, tcp).await.map_err(|e| {
-        XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("TLS handshake failed: {e}"),
+    let mut sender_opt = None;
+    if let Some(mut s) = pool.lock().await.peek_clone(&host_key) {
+        if s.ready().await.is_ok() {
+            sender_opt = Some(s);
+        } else {
+            // Remove the stale connection.
+            pool.lock().await.remove_host(&host_key);
         }
-    })?;
+    }
 
-    let io = TokioIo::new(tls_stream);
-    let (mut sender, conn) = hyper::client::conn::http2::handshake(
-        hyper_util::rt::TokioExecutor::new(),
-        io,
-    )
-    .await
-    .map_err(|e| XiaopengError::NetworkError {
-        url: req.url.clone(),
-        message: format!("HTTP/2 handshake: {e}"),
-    })?;
+    let mut sender = match sender_opt {
+        Some(s) => s,
+        None => {
+            // TLS with ALPN "h2"
+            let mut tls_config = (*build_tls_config()).clone();
+            tls_config.alpn_protocols = vec![b"h2".to_vec()];
 
-    tokio::spawn(conn);
+            let connector = TlsConnector::from(Arc::new(tls_config));
+            let tcp = TcpStream::connect(&authority).await.map_err(|e| XiaopengError::NetworkError {
+                url: req.url.clone(),
+                message: format!("TCP connect: {e}"),
+            })?;
+
+            let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("invalid server name: {e}"),
+                })?;
+
+            let tls_stream = connector.connect(server_name, tcp).await.map_err(|e| {
+                XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("TLS handshake failed: {e}"),
+                }
+            })?;
+
+            let io = TokioIo::new(tls_stream);
+            let (sender, conn) = hyper::client::conn::http2::handshake(
+                hyper_util::rt::TokioExecutor::new(),
+                io,
+            )
+            .await
+            .map_err(|e| XiaopengError::NetworkError {
+                url: req.url.clone(),
+                message: format!("HTTP/2 handshake: {e}"),
+            })?;
+
+            tokio::spawn(conn);
+            
+            pool.lock().await.put(&host_key, sender.clone());
+            
+            sender
+        }
+    };
 
     let method: hyper::Method = req.method.clone().into();
     let body_bytes = req.body.clone().unwrap_or_default();

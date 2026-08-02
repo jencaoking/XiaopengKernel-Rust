@@ -2,8 +2,7 @@
 
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use bytes::Bytes;
-use crate::request::{Response, HttpVersion};
+use crate::request::Response;
 
 /// Cached entry keyed by `method + url`.
 #[derive(Clone)]

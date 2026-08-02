@@ -12,8 +12,9 @@ use xiaopeng_common::{XiaopengError, XiaopengResult};
 
 use crate::request::{Headers, HttpVersion, Request, Response};
 use crate::tls::build_tls_config;
+use crate::H3PoolType;
 
-pub async fn send(req: &Request) -> XiaopengResult<Response> {
+pub async fn send(req: &Request, pool: &H3PoolType) -> XiaopengResult<Response> {
     let url = Url::parse(&req.url).map_err(|e| XiaopengError::NetworkError {
         url: req.url.clone(),
         message: format!("invalid URL: {e}"),
@@ -37,64 +38,80 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
 
     info!("HTTP/3 https://{authority}{path_and_query}");
 
-    // Build QUIC client config (TLS 1.3 + ALPN "h3")
-    let mut tls_config = (*build_tls_config()).clone();
-    tls_config.alpn_protocols = vec![b"h3".to_vec()];
+    let host_key = format!("https://{}", authority);
 
-    let quic_client_config = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("QUIC TLS config: {e}"),
-        })?;
+    let mut sender_opt = None;
+    if let Some(s) = pool.lock().await.peek_clone(&host_key) {
+        sender_opt = Some(s);
+    }
 
-    let client_config = quinn::ClientConfig::new(Arc::new(quic_client_config));
+    let mut send_request = match sender_opt {
+        Some(s) => s,
+        None => {
+            // Build QUIC client config (TLS 1.3 + ALPN "h3")
+            let mut tls_config = (*build_tls_config()).clone();
+            tls_config.alpn_protocols = vec![b"h3".to_vec()];
 
-    // Bind to any local port.
-    let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("QUIC endpoint: {e}"),
-        })?;
-    endpoint.set_default_client_config(client_config);
+            let quic_client_config = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("QUIC TLS config: {e}"),
+                })?;
 
-    // Resolve the remote address.
-    let addr = tokio::net::lookup_host(&authority)
-        .await
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("DNS lookup failed: {e}"),
-        })?
-        .find(|a| a.is_ipv4())
-        .ok_or_else(|| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: "no IPv4 address found".into(),
-        })?;
+            let client_config = quinn::ClientConfig::new(Arc::new(quic_client_config));
 
-    // QUIC connect
-    let quic_conn = endpoint.connect(addr, &host)
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("QUIC connect: {e}"),
-        })?
-        .await
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("QUIC handshake: {e}"),
-        })?;
+            // Bind to any local port.
+            let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("QUIC endpoint: {e}"),
+                })?;
+            endpoint.set_default_client_config(client_config);
 
-    // Build H3 connection
-    let h3_conn = h3_quinn::Connection::new(quic_conn);
-    let (mut h3_driver, mut send_request) = h3::client::new(h3_conn)
-        .await
-        .map_err(|e| XiaopengError::NetworkError {
-            url: req.url.clone(),
-            message: format!("H3 connection: {e}"),
-        })?;
+            // Resolve the remote address.
+            let addr = tokio::net::lookup_host(&authority)
+                .await
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("DNS lookup failed: {e}"),
+                })?
+                .find(|a| a.is_ipv4())
+                .ok_or_else(|| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: "no IPv4 address found".into(),
+                })?;
 
-    // Drive the connection in the background.
-    let drive = tokio::spawn(async move {
-        let _ = std::future::poll_fn(|cx| h3_driver.poll_close(cx)).await;
-    });
+            // QUIC connect
+            let quic_conn = endpoint.connect(addr, &host)
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("QUIC connect: {e}"),
+                })?
+                .await
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("QUIC handshake: {e}"),
+                })?;
+
+            // Build H3 connection
+            let h3_conn = h3_quinn::Connection::new(quic_conn);
+            let (mut h3_driver, send_request) = h3::client::new(h3_conn)
+                .await
+                .map_err(|e| XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("H3 connection: {e}"),
+                })?;
+
+            // Drive the connection in the background.
+            tokio::spawn(async move {
+                let _ = std::future::poll_fn(|cx| h3_driver.poll_close(cx)).await;
+            });
+            
+            pool.lock().await.put(&host_key, send_request.clone());
+            
+            send_request
+        }
+    };
 
     // Build the HTTP/3 request
     let method_str = req.method.to_string();
@@ -174,8 +191,7 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
     let body = Bytes::from(body_buf);
     debug!("HTTP/3 response: {status} ({} bytes)", body.len());
 
-    drop(drive);
-    endpoint.wait_idle().await;
+
 
     Ok(Response {
         status,

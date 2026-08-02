@@ -16,8 +16,9 @@ use xiaopeng_common::{XiaopengError, XiaopengResult};
 
 use crate::request::{Headers, HttpVersion, Request, Response};
 use crate::tls::build_tls_config;
+use crate::H1PoolType;
 
-pub async fn send(req: &Request) -> XiaopengResult<Response> {
+pub async fn send(req: &Request, pool: &H1PoolType) -> XiaopengResult<Response> {
     let url = Url::parse(&req.url).map_err(|e| XiaopengError::NetworkError {
         url: req.url.clone(),
         message: format!("invalid URL: {e}"),
@@ -36,15 +37,28 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
 
     info!("HTTP/1.1 {} {scheme}://{authority}{path}", req.method);
 
-    let tcp = TcpStream::connect(&authority).await.map_err(|e| XiaopengError::NetworkError {
-        url: req.url.clone(),
-        message: format!("TCP connect failed: {e}"),
-    })?;
-
     let method: hyper::Method = req.method.clone().into();
     let body_bytes = req.body.clone().unwrap_or_default();
 
-    match scheme {
+    let host_key = format!("{}://{}", scheme, authority);
+
+    let mut sender_opt = None;
+    if let Some(mut s) = pool.lock().await.take(&host_key) {
+        // If it's ready, we can reuse it. If not, we drop it.
+        if s.ready().await.is_ok() {
+            sender_opt = Some(s);
+        }
+    }
+
+    let mut sender = match sender_opt {
+        Some(s) => s,
+        None => {
+            let tcp = TcpStream::connect(&authority).await.map_err(|e| XiaopengError::NetworkError {
+                url: req.url.clone(),
+                message: format!("TCP connect failed: {e}"),
+            })?;
+
+            match scheme {
         "https" => {
             let mut tls_config = (*build_tls_config()).clone();
             // For HTTP/1.1 TLS, advertise only h1.
@@ -62,7 +76,7 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
                 }
             })?;
             let io = TokioIo::new(tls_stream);
-            let (mut sender, conn) =
+            let (sender, conn) =
                 hyper::client::conn::http1::handshake(io).await.map_err(|e| {
                     XiaopengError::NetworkError {
                         url: req.url.clone(),
@@ -70,11 +84,11 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
                     }
                 })?;
             tokio::spawn(conn);
-            send_h1_request(&mut sender, method, &authority, &path, &req.headers, body_bytes, &req.url, true).await
+            sender
         }
         "http" => {
             let io = TokioIo::new(tcp);
-            let (mut sender, conn) =
+            let (sender, conn) =
                 hyper::client::conn::http1::handshake(io).await.map_err(|e| {
                     XiaopengError::NetworkError {
                         url: req.url.clone(),
@@ -82,13 +96,25 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
                     }
                 })?;
             tokio::spawn(conn);
-            send_h1_request(&mut sender, method, &authority, &path, &req.headers, body_bytes, &req.url, false).await
+            sender
         }
-        _ => Err(XiaopengError::NetworkError {
+        _ => return Err(XiaopengError::NetworkError {
             url: req.url.clone(),
             message: format!("unsupported scheme: {scheme}"),
         }),
     }
+    }
+    };
+
+    let res = send_h1_request(&mut sender, method, &authority, &path, &req.headers, body_bytes, &req.url, scheme == "https").await;
+    
+    // Attempt to put the connection back into the pool.
+    // If it's still healthy, `ready()` will return Ok(()).
+    if res.is_ok() && sender.ready().await.is_ok() {
+        pool.lock().await.put(&host_key, sender);
+    }
+    
+    res
 }
 
 async fn send_h1_request(
