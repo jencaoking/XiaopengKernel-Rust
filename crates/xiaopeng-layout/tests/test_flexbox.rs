@@ -11,14 +11,14 @@ fn test_flexbox_horizontal_stack() {
 
     // Child 1: width 200, height 50
     let mut c1_style = ComputedStyle::default();
-    c1_style.width = Some(200.0);
-    c1_style.height = Some(50.0);
+    c1_style.width = xiaopeng_style::computed_style::CssLength::Px(200.0);
+    c1_style.height = xiaopeng_style::computed_style::CssLength::Px(50.0);
     let c1 = LayoutBox::new(c1_style, BoxType::BlockNode, None);
 
     // Child 2: width 300, height 80
     let mut c2_style = ComputedStyle::default();
-    c2_style.width = Some(300.0);
-    c2_style.height = Some(80.0);
+    c2_style.width = xiaopeng_style::computed_style::CssLength::Px(300.0);
+    c2_style.height = xiaopeng_style::computed_style::CssLength::Px(80.0);
     let c2 = LayoutBox::new(c2_style, BoxType::BlockNode, None);
 
     root.children.push(c1);

@@ -31,7 +31,7 @@ fn test_style_resolver_class() {
     let resolver = StyleResolver::new(&sheet);
     let style = resolver.resolve_style(&div);
 
-    assert_eq!(style.width, Some(100.0));
+    assert_eq!(style.width, xiaopeng_style::computed_style::CssLength::Px(100.0));
 }
 
 #[test]

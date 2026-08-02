@@ -12,13 +12,13 @@ fn test_grid_layout() {
     let mut root = LayoutBox::new(root_style, BoxType::BlockNode, None);
 
     let mut c1_style = ComputedStyle::default();
-    c1_style.width = Some(100.0);
-    c1_style.height = Some(100.0);
+    c1_style.width = xiaopeng_style::computed_style::CssLength::Px(100.0);
+    c1_style.height = xiaopeng_style::computed_style::CssLength::Px(100.0);
     let c1 = LayoutBox::new(c1_style, BoxType::BlockNode, None);
 
     let mut c2_style = ComputedStyle::default();
-    c2_style.width = Some(100.0);
-    c2_style.height = Some(100.0);
+    c2_style.width = xiaopeng_style::computed_style::CssLength::Px(100.0);
+    c2_style.height = xiaopeng_style::computed_style::CssLength::Px(100.0);
     let c2 = LayoutBox::new(c2_style, BoxType::BlockNode, None);
 
     root.children.push(c1);

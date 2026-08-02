@@ -37,10 +37,21 @@ impl<'a> StyleResolver<'a> {
             }
         });
 
-        // Apply declarations
-        for (rule, _, _) in matched_rules {
+        // Apply normal declarations
+        for (rule, _, _) in &matched_rules {
             for decl in &rule.declarations {
-                self.apply_declaration(&mut computed, decl);
+                if !decl.important {
+                    self.apply_declaration(&mut computed, decl);
+                }
+            }
+        }
+        
+        // Apply important declarations
+        for (rule, _, _) in &matched_rules {
+            for decl in &rule.declarations {
+                if decl.important {
+                    self.apply_declaration(&mut computed, decl);
+                }
             }
         }
 
@@ -143,18 +154,10 @@ impl<'a> StyleResolver<'a> {
                 }
             }
             "width" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.width = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.width = v; }
             }
             "height" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.height = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.height = v; }
             }
             "position" => {
                 style.position = match decl.value.as_str() {
@@ -166,32 +169,16 @@ impl<'a> StyleResolver<'a> {
                 };
             }
             "top" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.top = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.top = v; }
             }
             "bottom" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.bottom = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.bottom = v; }
             }
             "left" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.left = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.left = v; }
             }
             "right" => {
-                if decl.value.ends_with("px") {
-                    if let Ok(v) = decl.value.trim_end_matches("px").parse::<f32>() {
-                        style.right = Some(v);
-                    }
-                }
+                if let Some(v) = parse_length(&decl.value) { style.right = v; }
             }
             "z-index" => {
                 if let Ok(v) = decl.value.parse::<i32>() {
@@ -199,8 +186,11 @@ impl<'a> StyleResolver<'a> {
                 }
             }
             "font-size" => {
+                // Font size should resolve to px
                 if let Some(v) = parse_length(&decl.value) {
-                    style.font_size = v;
+                    if let crate::computed_style::CssLength::Px(px) = v {
+                        style.font_size = px;
+                    }
                 }
             }
             "margin" => {
@@ -253,11 +243,26 @@ impl<'a> StyleResolver<'a> {
     }
 }
 
-fn parse_length(val: &str) -> Option<f32> {
-    if val.ends_with("px") {
-        val.trim_end_matches("px").parse::<f32>().ok()
+fn parse_length(val: &str) -> Option<crate::computed_style::CssLength> {
+    use crate::computed_style::CssLength;
+    if val == "auto" {
+        Some(CssLength::Auto)
+    } else if val == "inherit" {
+        Some(CssLength::Inherit)
     } else if val == "0" {
-        Some(0.0)
+        Some(CssLength::Px(0.0))
+    } else if val.ends_with("px") {
+        val.trim_end_matches("px").parse::<f32>().ok().map(CssLength::Px)
+    } else if val.ends_with("%") {
+        val.trim_end_matches("%").parse::<f32>().ok().map(CssLength::Percent)
+    } else if val.ends_with("em") {
+        val.trim_end_matches("em").parse::<f32>().ok().map(CssLength::Em)
+    } else if val.ends_with("rem") {
+        val.trim_end_matches("rem").parse::<f32>().ok().map(CssLength::Rem)
+    } else if val.ends_with("vh") {
+        val.trim_end_matches("vh").parse::<f32>().ok().map(CssLength::Vh)
+    } else if val.ends_with("vw") {
+        val.trim_end_matches("vw").parse::<f32>().ok().map(CssLength::Vw)
     } else {
         None
     }

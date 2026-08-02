@@ -12,13 +12,13 @@ fn test_block_stacking() {
     // Child 1: height 100
     let mut c1_style = ComputedStyle::default();
     c1_style.display = Display::Block;
-    c1_style.height = Some(100.0);
+    c1_style.height = xiaopeng_style::computed_style::CssLength::Px(100.0);
     let c1 = LayoutBox::new(c1_style, xiaopeng_layout::layout_box::BoxType::BlockNode, None);
 
     // Child 2: height 200
     let mut c2_style = ComputedStyle::default();
     c2_style.display = Display::Block;
-    c2_style.height = Some(200.0);
+    c2_style.height = xiaopeng_style::computed_style::CssLength::Px(200.0);
     let c2 = LayoutBox::new(c2_style, xiaopeng_layout::layout_box::BoxType::BlockNode, None);
 
     root.children.push(c1);

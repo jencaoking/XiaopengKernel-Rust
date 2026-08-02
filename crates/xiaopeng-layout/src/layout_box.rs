@@ -72,20 +72,20 @@ impl LayoutBox {
     pub fn new(style: ComputedStyle, box_type: BoxType, node: Option<NodePtr>) -> Self {
         let mut dimensions = Dimensions::default();
         
-        dimensions.margin.top = style.margin_top;
-        dimensions.margin.bottom = style.margin_bottom;
-        dimensions.margin.left = style.margin_left;
-        dimensions.margin.right = style.margin_right;
+        dimensions.margin.top = Self::resolve_length(style.margin_top);
+        dimensions.margin.bottom = Self::resolve_length(style.margin_bottom);
+        dimensions.margin.left = Self::resolve_length(style.margin_left);
+        dimensions.margin.right = Self::resolve_length(style.margin_right);
         
-        dimensions.padding.top = style.padding_top;
-        dimensions.padding.bottom = style.padding_bottom;
-        dimensions.padding.left = style.padding_left;
-        dimensions.padding.right = style.padding_right;
+        dimensions.padding.top = Self::resolve_length(style.padding_top);
+        dimensions.padding.bottom = Self::resolve_length(style.padding_bottom);
+        dimensions.padding.left = Self::resolve_length(style.padding_left);
+        dimensions.padding.right = Self::resolve_length(style.padding_right);
         
-        dimensions.border.top = style.border_top_width;
-        dimensions.border.bottom = style.border_bottom_width;
-        dimensions.border.left = style.border_left_width;
-        dimensions.border.right = style.border_right_width;
+        dimensions.border.top = Self::resolve_length(style.border_top_width);
+        dimensions.border.bottom = Self::resolve_length(style.border_bottom_width);
+        dimensions.border.left = Self::resolve_length(style.border_left_width);
+        dimensions.border.right = Self::resolve_length(style.border_right_width);
 
         Self {
             dimensions,
@@ -93,6 +93,15 @@ impl LayoutBox {
             children: Vec::new(),
             box_type,
             node,
+        }
+    }
+
+    fn resolve_length(len: xiaopeng_style::computed_style::CssLength) -> f32 {
+        use xiaopeng_style::computed_style::CssLength;
+        match len {
+            CssLength::Px(v) => v,
+            CssLength::Em(v) | CssLength::Rem(v) => v * 16.0, // stub font size assumption
+            _ => 0.0,
         }
     }
 }

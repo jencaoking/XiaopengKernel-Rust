@@ -58,8 +58,13 @@ impl<'a> CssParser<'a> {
     fn consume_ident(&mut self) -> String {
         let mut result = String::new();
         while let Some(c) = self.next_char() {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c > '\x7F' {
                 result.push(self.consume_char().unwrap());
+            } else if c == '\\' {
+                self.consume_char(); // consume '\'
+                if let Some(escaped) = self.consume_char() {
+                    result.push(escaped);
+                }
             } else {
                 break;
             }
@@ -297,10 +302,18 @@ impl<'a> CssParser<'a> {
                         value.push(self.consume_char().unwrap());
                     }
                     
+                    let mut value = value.trim().to_string();
+                    let mut important = false;
+                    let val_lower = value.to_lowercase();
+                    if val_lower.ends_with("!important") {
+                        value = value[..value.len() - 10].trim().to_string();
+                        important = true;
+                    }
+                    
                     declarations.push(Declaration {
                         property,
-                        value: value.trim().to_string(),
-                        important: false, // Stub
+                        value,
+                        important,
                     });
                     
                     if self.next_char() == Some(';') {

@@ -33,24 +33,24 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
         _ => Position::Relative, // Relative in Taffy behaves like static flow if no offsets, but allows offsets.
     };
 
-    if let Some(top) = lbox.style.top {
+    if let Some(top) = lbox.style.top.to_px(0.0) {
         style.inset.top = LengthPercentageAuto::length(top);
     }
-    if let Some(bottom) = lbox.style.bottom {
+    if let Some(bottom) = lbox.style.bottom.to_px(0.0) {
         style.inset.bottom = LengthPercentageAuto::length(bottom);
     }
-    if let Some(left) = lbox.style.left {
+    if let Some(left) = lbox.style.left.to_px(0.0) {
         style.inset.left = LengthPercentageAuto::length(left);
     }
-    if let Some(right) = lbox.style.right {
+    if let Some(right) = lbox.style.right.to_px(0.0) {
         style.inset.right = LengthPercentageAuto::length(right);
     }
     
-    if let Some(w) = lbox.style.width {
+    if let Some(w) = lbox.style.width.to_px(0.0) {
         style.size.width = Dimension::length(w);
     }
     
-    if let Some(h) = lbox.style.height {
+    if let Some(h) = lbox.style.height.to_px(0.0) {
         style.size.height = Dimension::length(h);
     }
     

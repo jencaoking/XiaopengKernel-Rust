@@ -11,10 +11,10 @@ fn test_absolute_positioning() {
     // Absolute child positioned at right: 10px, bottom: 20px
     let mut abs_style = ComputedStyle::default();
     abs_style.position = Position::Absolute;
-    abs_style.right = Some(10.0);
-    abs_style.bottom = Some(20.0);
-    abs_style.width = Some(100.0);
-    abs_style.height = Some(50.0);
+    abs_style.right = xiaopeng_style::computed_style::CssLength::Px(10.0);
+    abs_style.bottom = xiaopeng_style::computed_style::CssLength::Px(20.0);
+    abs_style.width = xiaopeng_style::computed_style::CssLength::Px(100.0);
+    abs_style.height = xiaopeng_style::computed_style::CssLength::Px(50.0);
     let abs_child = LayoutBox::new(abs_style, BoxType::BlockNode, None);
 
     root.children.push(abs_child);
@@ -24,8 +24,8 @@ fn test_absolute_positioning() {
     // and absolute bottom 20px from 0 height means y = 0 - 50 - 20 = -70 ?
     // Let's explicitly give root a height so we can assert properly.
 
-    root.style.height = Some(500.0);
-    root.style.width = Some(500.0);
+    root.style.height = xiaopeng_style::computed_style::CssLength::Px(500.0);
+    root.style.width = xiaopeng_style::computed_style::CssLength::Px(500.0);
     layout_flex(&mut root, 0.0, 0.0);
 
     // Expected position for abs_child:

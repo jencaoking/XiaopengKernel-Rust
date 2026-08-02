@@ -21,7 +21,7 @@ fn calculate_block_width(node: &mut LayoutBox, containing_block_width: f32) {
     
     // Default width is the containing block width (simulating width: auto)
     // If a specific width is set, use it.
-    let mut width = style.width.unwrap_or(containing_block_width);
+    let mut width = style.width.to_px(containing_block_width).unwrap_or(containing_block_width);
     
     // For now, margin/padding are 0 unless implemented in style resolver
     // In a full implementation we'd subtract margin/padding from width if box-sizing: content-box
@@ -61,7 +61,7 @@ fn layout_block_children(node: &mut LayoutBox) {
 }
 
 fn calculate_block_height(node: &mut LayoutBox) {
-    if let Some(explicit_height) = node.style.height {
+    if let Some(explicit_height) = node.style.height.to_px(0.0) {
         node.dimensions.content.height = explicit_height;
     } else {
         // Height is the sum of children heights (already accumulated in layout_block_children)

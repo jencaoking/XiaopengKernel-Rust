@@ -48,8 +48,8 @@ fn test_end_to_end_pipeline() {
 
     // Check Container Style (Class selector)
     let container_style = resolver.resolve_style(&container_node);
-    assert_eq!(container_style.width, Some(500.0));
-    assert_eq!(container_style.height, Some(300.0));
+    assert_eq!(container_style.width, xiaopeng_style::computed_style::CssLength::Px(500.0));
+    assert_eq!(container_style.height, xiaopeng_style::computed_style::CssLength::Px(300.0));
 
     // Check P Style (Descendant selector & Class selector)
     let p_style = resolver.resolve_style(p_node);
