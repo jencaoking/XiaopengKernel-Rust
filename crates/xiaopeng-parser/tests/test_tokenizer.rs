@@ -72,3 +72,35 @@ fn test_tokenizer_attributes() {
         _ => panic!("Expected start tag div"),
     }
 }
+
+#[test]
+fn test_tokenizer_rawtext_script() {
+    let input = "<script>var a = b < c;</script>";
+    let mut tokenizer = HtmlTokenizer::new(input);
+
+    let token1 = tokenizer.next_token().unwrap().unwrap();
+    if let HtmlToken::StartTag { name, self_closing, .. } = token1 {
+        assert_eq!(name, "script");
+        assert!(!self_closing);
+    } else {
+        panic!("Expected start tag");
+    }
+
+    // Now, the '< c;' shouldn't trigger a tag!
+    // It should be emitted as characters
+    let mut script_content = String::new();
+    loop {
+        let t = tokenizer.next_token().unwrap().unwrap();
+        match t {
+            HtmlToken::Character(c) => script_content.push(c),
+            HtmlToken::EndTag { name } => {
+                assert_eq!(name, "script");
+                break;
+            }
+            HtmlToken::Eof => panic!("Unexpected EOF"),
+            _ => panic!("Unexpected token inside rawtext: {:?}", t),
+        }
+    }
+    
+    assert_eq!(script_content, "var a = b < c;");
+}

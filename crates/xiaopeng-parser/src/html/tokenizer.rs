@@ -197,8 +197,17 @@ impl<'a> HtmlTokenizer<'a> {
             }
         }
         let token = self.current_token.take().unwrap();
+        
+        self.state = TokenizerState::Data;
+        
         if let HtmlToken::StartTag { ref name, .. } = token {
             self.last_start_tag = name.clone();
+            match name.as_str() {
+                "title" | "textarea" => self.state = TokenizerState::Rcdata,
+                "style" | "xmp" | "iframe" | "noembed" | "noframes" | "script" => self.state = TokenizerState::Rawtext,
+                "plaintext" => self.state = TokenizerState::Plaintext,
+                _ => {}
+            }
         }
         self.emit(token)
     }
@@ -266,12 +275,7 @@ impl<'a> HtmlTokenizer<'a> {
                         '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeAttributeName,
                         '/' => self.state = TokenizerState::SelfClosingStartTag,
                         '>' => {
-                            self.state = TokenizerState::Data;
-                            let token = self.current_token.take().unwrap();
-                            if let HtmlToken::StartTag { ref name, .. } = token {
-                                self.last_start_tag = name.clone();
-                            }
-                            return Ok(self.emit(token));
+                            return Ok(self.emit_current_token());
                         }
                         '\0' => {
                             // Parse error

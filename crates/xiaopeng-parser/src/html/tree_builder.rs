@@ -158,6 +158,8 @@ impl HtmlTreeBuilder {
             }
             HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "title" | "style" | "script" | "noscript") => {
                 self.insert_element_with_token(token);
+                self.original_insertion_mode = self.insertion_mode;
+                self.insertion_mode = InsertionMode::Text;
             }
             HtmlToken::EndTag { name } if name == "head" => {
                 self.open_elements.pop();
@@ -217,7 +219,10 @@ impl HtmlTreeBuilder {
             }
             HtmlToken::StartTag { name, self_closing, .. } => {
                 self.insert_element_with_token(token);
-                if *self_closing || Self::is_void_element(name) {
+                if matches!(name.as_str(), "script" | "style" | "textarea" | "title" | "xmp" | "iframe" | "noembed" | "noframes" | "noscript") {
+                    self.original_insertion_mode = self.insertion_mode;
+                    self.insertion_mode = InsertionMode::Text;
+                } else if *self_closing || Self::is_void_element(name) {
                     self.open_elements.pop();
                 }
             }
