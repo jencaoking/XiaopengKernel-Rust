@@ -19,3 +19,4 @@ xiaopeng-net.workspace = true
 xiaopeng-script.workspace = true
 tracing.workspace = true
 tokio.workspace = true
+winit.workspace = true

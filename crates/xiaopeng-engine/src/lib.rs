@@ -2,9 +2,11 @@
 
 pub mod browsing_context;
 pub mod event_loop;
+pub mod window;
 
 pub use browsing_context::BrowsingContext;
 pub use event_loop::EventLoop;
+pub use window::BrowserApp;
 use tracing::{info, instrument, warn};
 use xiaopeng_common::XiaopengResult;
 use xiaopeng_script::JsRuntime;
@@ -25,6 +27,22 @@ pub struct BrowserEngine {
 }
 
 impl BrowserEngine {
+    pub fn run_winit(self) -> XiaopengResult<()> {
+        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| {
+            xiaopeng_common::XiaopengError::RenderError {
+                backend: "winit".to_string(),
+                message: format!("Failed to create EventLoop: {}", e),
+            }
+        })?;
+        let mut app = BrowserApp::new(self);
+        event_loop.run_app(&mut app).map_err(|e| {
+            xiaopeng_common::XiaopengError::RenderError {
+                backend: "winit".to_string(),
+                message: format!("Event loop run_app failed: {}", e),
+            }
+        })?;
+        Ok(())
+    }
     pub fn new(config: EngineConfig) -> Self {
         info!(?config, "Initializing BrowserEngine");
         let js_runtime = JsRuntime::new()
