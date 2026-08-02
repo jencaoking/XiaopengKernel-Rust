@@ -28,6 +28,7 @@ pub enum HtmlToken {
     },
     Character(char),
     Comment(String),
+    Cdata(String),
     Eof,
 }
 
@@ -500,6 +501,24 @@ impl HtmlTokenizer {
                             self.reconsume_in(TokenizerState::MarkupDeclarationOpen);
                             return Ok(None);
                         }
+                    } else if ch == '[' {
+                        if self.buffer.len() >= 6 {
+                            let s: String = self.buffer.iter().take(6).collect();
+                            if s == "CDATA[" {
+                                for _ in 0..6 { self.consume_next().unwrap(); }
+                                self.current_token = Some(HtmlToken::Cdata(String::new()));
+                                self.state = TokenizerState::CdataSection;
+                            } else {
+                                self.current_token = Some(HtmlToken::Comment(String::new()));
+                                self.reconsume_in(TokenizerState::BogusComment);
+                            }
+                        } else if self.eof {
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.reconsume_in(TokenizerState::BogusComment);
+                        } else {
+                            self.reconsume_in(TokenizerState::MarkupDeclarationOpen);
+                            return Ok(None);
+                        }
                     } else {
                         self.current_token = Some(HtmlToken::Comment(String::new()));
                         self.reconsume_in(TokenizerState::BogusComment);
@@ -751,6 +770,45 @@ impl HtmlTokenizer {
                     match ch {
                         '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
                         _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    }
+                }
+                TokenizerState::CdataSection => {
+                    if eof {
+                        return Ok(self.emit_current_token());
+                    } else if ch == ']' {
+                        self.state = TokenizerState::CdataSectionBracket;
+                    } else {
+                        if let Some(HtmlToken::Cdata(ref mut data)) = self.current_token {
+                            data.push(ch);
+                        }
+                    }
+                }
+                TokenizerState::CdataSectionBracket => {
+                    if ch == ']' {
+                        self.state = TokenizerState::CdataSectionEnd;
+                    } else {
+                        if let Some(HtmlToken::Cdata(ref mut data)) = self.current_token {
+                            data.push(']');
+                            data.push(ch);
+                        }
+                        self.state = TokenizerState::CdataSection;
+                    }
+                }
+                TokenizerState::CdataSectionEnd => {
+                    if ch == '>' {
+                        self.state = TokenizerState::Data;
+                        return Ok(self.emit_current_token());
+                    } else if ch == ']' {
+                        if let Some(HtmlToken::Cdata(ref mut data)) = self.current_token {
+                            data.push(']');
+                        }
+                    } else {
+                        if let Some(HtmlToken::Cdata(ref mut data)) = self.current_token {
+                            data.push(']');
+                            data.push(']');
+                            data.push(ch);
+                        }
+                        self.state = TokenizerState::CdataSection;
                     }
                 }
                 _ => {

@@ -4,7 +4,7 @@ pub mod event;
 pub mod node;
 
 pub use event::{Event, EventPhase, EventListener};
-pub use node::{ElementData, Node, NodeData, NodePtr, NodeType};
+pub use node::{ElementData, Node, NodeData, NodePtr, NodeType, DocumentTypeData, ProcessingInstructionData};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
@@ -24,8 +24,23 @@ impl Document {
         Node::new(NodeData::Element(ElementData::new(tag_name.to_string())))
     }
 
+    pub fn create_document_fragment(&self) -> NodePtr {
+        Node::new(NodeData::DocumentFragment)
+    }
+
     pub fn create_text_node(&self, data: &str) -> NodePtr {
         Node::new(NodeData::Text(data.to_string()))
+    }
+
+    pub fn create_cdata_section(&self, data: &str) -> NodePtr {
+        Node::new(NodeData::CDataSection(data.to_string()))
+    }
+
+    pub fn create_processing_instruction(&self, target: &str, data: &str) -> NodePtr {
+        Node::new(NodeData::ProcessingInstruction(crate::node::ProcessingInstructionData {
+            target: target.to_string(),
+            data: data.to_string(),
+        }))
     }
 
     pub fn create_comment(&self, data: &str) -> NodePtr {

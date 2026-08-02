@@ -111,7 +111,13 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Character(c) if c.is_whitespace() => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
-            HtmlToken::Doctype { .. } => {
+            HtmlToken::Doctype { name, public_id, system_id, .. } => {
+                let dt_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::DocumentType(xiaopeng_dom::DocumentTypeData {
+                    name: name.clone().unwrap_or_default(),
+                    public_id: public_id.clone().unwrap_or_default(),
+                    system_id: system_id.clone().unwrap_or_default(),
+                }));
+                xiaopeng_dom::Node::append_child(&self.document.root, &dt_node);
                 self.check_quirks_mode(token);
                 self.insertion_mode = InsertionMode::BeforeHtml;
             }
@@ -225,6 +231,7 @@ impl HtmlTreeBuilder {
                 self.insert_character(*c);
             }
             HtmlToken::Comment(_) => self.insert_comment(token),
+            HtmlToken::Cdata(ref c) => self.insert_cdata(c),
             HtmlToken::StartTag { name, .. } if name == "table" => {
                 self.insert_element_with_token(token);
                 self.insertion_mode = InsertionMode::InTable;
@@ -623,6 +630,16 @@ impl HtmlTreeBuilder {
             } else {
                 xiaopeng_dom::Node::append_child(&target, &new_node);
             }
+        }
+    }
+
+    pub fn insert_cdata(&mut self, data: &str) {
+        let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::CDataSection(data.to_string()));
+        let (target, before) = self.appropriate_place_for_inserting_node(None);
+        if let Some(b) = before {
+            let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+        } else {
+            xiaopeng_dom::Node::append_child(&target, &new_node);
         }
     }
     

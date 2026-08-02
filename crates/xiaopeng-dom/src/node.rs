@@ -8,12 +8,20 @@ use crate::event::{Event, EventPhase, EventListenerEntry, EventListener};
 pub type NodePtr = Arc<RwLock<Node>>;
 pub type WeakNodePtr = Weak<RwLock<Node>>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum NodeType {
-    Document,
-    Element,
-    Text,
-    Comment,
+    Element = 1,
+    Attribute = 2,
+    Text = 3,
+    CDataSection = 4,
+    EntityReference = 5,
+    Entity = 6,
+    ProcessingInstruction = 7,
+    Comment = 8,
+    Document = 9,
+    DocumentType = 10,
+    DocumentFragment = 11,
+    Notation = 12,
 }
 
 #[derive(Debug, Clone)]
@@ -83,11 +91,32 @@ impl ElementData {
 }
 
 #[derive(Debug, Clone)]
+pub struct DocumentTypeData {
+    pub name: String,
+    pub public_id: String,
+    pub system_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessingInstructionData {
+    pub target: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum NodeData {
     Document,
+    DocumentType(DocumentTypeData),
+    DocumentFragment,
     Element(ElementData),
+    Attr(String, String),
     Text(String),
+    CDataSection(String),
+    ProcessingInstruction(ProcessingInstructionData),
     Comment(String),
+    Entity(String),
+    EntityReference(String),
+    Notation(String),
 }
 
 #[derive(Debug)]
@@ -118,9 +147,17 @@ impl Node {
     pub fn node_type(&self) -> NodeType {
         match self.data {
             NodeData::Document => NodeType::Document,
+            NodeData::DocumentType(_) => NodeType::DocumentType,
+            NodeData::DocumentFragment => NodeType::DocumentFragment,
             NodeData::Element(_) => NodeType::Element,
+            NodeData::Attr(_, _) => NodeType::Attribute,
             NodeData::Text(_) => NodeType::Text,
+            NodeData::CDataSection(_) => NodeType::CDataSection,
+            NodeData::ProcessingInstruction(_) => NodeType::ProcessingInstruction,
             NodeData::Comment(_) => NodeType::Comment,
+            NodeData::Entity(_) => NodeType::Entity,
+            NodeData::EntityReference(_) => NodeType::EntityReference,
+            NodeData::Notation(_) => NodeType::Notation,
         }
     }
 
@@ -226,9 +263,11 @@ impl Node {
 
     pub fn text_content(&self) -> String {
         match &self.data {
-            NodeData::Text(t) => t.clone(),
-            NodeData::Comment(_) => String::new(),
-            NodeData::Document | NodeData::Element(_) => {
+            NodeData::Text(t) | NodeData::CDataSection(t) => t.clone(),
+            NodeData::Attr(_, v) => v.clone(),
+            NodeData::Comment(_) | NodeData::ProcessingInstruction(_) | NodeData::DocumentType(_) 
+            | NodeData::Notation(_) | NodeData::Entity(_) | NodeData::EntityReference(_) => String::new(),
+            NodeData::Document | NodeData::DocumentFragment | NodeData::Element(_) => {
                 let mut content = String::new();
                 for child in &self.children {
                     content.push_str(&child.read().unwrap().text_content());
@@ -321,8 +360,21 @@ impl Node {
     fn to_html_inner(node_ptr: &NodePtr, parent_tag: Option<&str>) -> String {
         let node = node_ptr.read().unwrap();
         match &node.data {
-            NodeData::Document => {
+            NodeData::Document | NodeData::DocumentFragment => {
                 node.children.iter().map(|c| Self::to_html_inner(c, None)).collect::<Vec<_>>().join("")
+            }
+            NodeData::DocumentType(dt) => {
+                let mut html = format!("<!DOCTYPE {}", dt.name);
+                if !dt.public_id.is_empty() {
+                    html.push_str(&format!(" PUBLIC \"{}\"", dt.public_id));
+                    if !dt.system_id.is_empty() {
+                        html.push_str(&format!(" \"{}\"", dt.system_id));
+                    }
+                } else if !dt.system_id.is_empty() {
+                    html.push_str(&format!(" SYSTEM \"{}\"", dt.system_id));
+                }
+                html.push_str(">");
+                html
             }
             NodeData::Element(el) => {
                 let mut attrs = String::new();
@@ -346,7 +398,10 @@ impl Node {
                 }
                 Self::escape_html_text(t)
             }
+            NodeData::CDataSection(c) => format!("<![CDATA[{}]]>", c),
+            NodeData::ProcessingInstruction(pi) => format!("<?{} {}?>", pi.target, pi.data),
             NodeData::Comment(c) => format!("<!--{}-->", c),
+            _ => String::new(),
         }
     }
 
