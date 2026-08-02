@@ -100,7 +100,8 @@ impl NetClient {
     }
 
     /// Perform an HTTP request with caching, protocol negotiation, and redirect following.
-    pub async fn fetch(&self, req: Request) -> XiaopengResult<Response> {
+    pub async fn fetch(&self, mut req: Request) -> XiaopengResult<Response> {
+        self.check_security_policy(&mut req)?;
         let mut current_req = req.clone();
         for hop in 0..=self.max_redirects {
             let method_str = current_req.method.to_string();
@@ -130,6 +131,9 @@ impl NetClient {
             }
 
             let resp = self.send_one(&current_req).await?;
+
+            // 1.5. Validate CORS response if needed
+            self.validate_cors_response(&current_req, &resp)?;
 
             // Check if 304 Not Modified
             if resp.status == 304 {
@@ -207,7 +211,10 @@ impl NetClient {
                     url: next_url,
                     headers: current_req.headers.clone(),
                     body: if resp.status == 303 { None } else { current_req.body.clone() },
+                    initiator_origin: current_req.initiator_origin.clone(),
+                    mode: current_req.mode.clone(),
                 };
+                self.check_security_policy(&mut current_req)?;
                 continue;
             }
 
@@ -215,6 +222,76 @@ impl NetClient {
         }
 
         unreachable!()
+    }
+
+    fn check_security_policy(&self, req: &mut Request) -> XiaopengResult<()> {
+        use crate::request::RequestMode;
+        if let Some(ref init_origin) = req.initiator_origin {
+            let init_is_https = init_origin.starts_with("https://");
+            let target_is_https = req.url.starts_with("https://");
+            
+            // Mixed Content
+            if init_is_https && !target_is_https {
+                return Err(XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: "Mixed Content: HTTPS origin blocked from loading HTTP resource".into(),
+                });
+            }
+
+            let is_cross_origin = {
+                if let (Ok(t_url), Ok(i_url)) = (url::Url::parse(&req.url), url::Url::parse(init_origin)) {
+                    let t_origin = format!("{}://{}:{}", t_url.scheme(), t_url.host_str().unwrap_or(""), t_url.port_or_known_default().unwrap_or(80));
+                    let i_origin = format!("{}://{}:{}", i_url.scheme(), i_url.host_str().unwrap_or(""), i_url.port_or_known_default().unwrap_or(80));
+                    t_origin != i_origin
+                } else {
+                    false
+                }
+            };
+
+            if is_cross_origin {
+                match req.mode {
+                    RequestMode::SameOrigin => {
+                        return Err(XiaopengError::NetworkError {
+                            url: req.url.clone(),
+                            message: "Same-Origin Policy: cross-origin request blocked".into(),
+                        });
+                    }
+                    RequestMode::Cors => {
+                        req.headers.insert("origin", init_origin.clone());
+                    }
+                    _ => {} // NoCors, Navigate are allowed
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_cors_response(&self, req: &Request, resp: &Response) -> XiaopengResult<()> {
+        use crate::request::RequestMode;
+        if req.mode == RequestMode::Cors {
+            if let Some(ref init_origin) = req.initiator_origin {
+                let is_cross_origin = {
+                    if let (Ok(t_url), Ok(i_url)) = (url::Url::parse(&req.url), url::Url::parse(init_origin)) {
+                        let t_origin = format!("{}://{}:{}", t_url.scheme(), t_url.host_str().unwrap_or(""), t_url.port_or_known_default().unwrap_or(80));
+                        let i_origin = format!("{}://{}:{}", i_url.scheme(), i_url.host_str().unwrap_or(""), i_url.port_or_known_default().unwrap_or(80));
+                        t_origin != i_origin
+                    } else {
+                        false
+                    }
+                };
+
+                if is_cross_origin {
+                    let acao = resp.headers.get("access-control-allow-origin").unwrap_or("");
+                    if acao != "*" && acao != init_origin {
+                        return Err(XiaopengError::NetworkError {
+                            url: req.url.clone(),
+                            message: format!("CORS error: Missing or invalid Access-Control-Allow-Origin: '{}'", acao),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Send a single request, choosing the transport layer automatically.

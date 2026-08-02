@@ -82,6 +82,24 @@ impl Headers {
 }
 
 // ---------------------------------------------------------------------------
+// RequestMode
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestMode {
+    SameOrigin,
+    NoCors,
+    Cors,
+    Navigate,
+}
+
+impl Default for RequestMode {
+    fn default() -> Self {
+        RequestMode::NoCors
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Request
 // ---------------------------------------------------------------------------
 
@@ -91,6 +109,8 @@ pub struct Request {
     pub url:     String,
     pub headers: Headers,
     pub body:    Option<Bytes>,
+    pub initiator_origin: Option<String>,
+    pub mode: RequestMode,
 }
 
 impl Request {
@@ -100,6 +120,8 @@ impl Request {
             url:     url.into(),
             headers: Headers::new(),
             body:    None,
+            initiator_origin: None,
+            mode: RequestMode::Navigate,
         }
     }
 
@@ -109,6 +131,8 @@ impl Request {
             url:     url.into(),
             headers: Headers::new(),
             body:    Some(body.into()),
+            initiator_origin: None,
+            mode: RequestMode::Navigate,
         }
     }
 
