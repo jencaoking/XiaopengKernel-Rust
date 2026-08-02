@@ -26,16 +26,12 @@ pub fn build_tls_config() -> Arc<ClientConfig> {
 /// Loads native OS root certificates into `store`.
 /// Returns the number of certs successfully loaded.
 fn load_native_certs(store: &mut RootCertStore) -> usize {
-    match rustls_native_certs::load_native_certs() {
-        Ok(certs) => {
-            let mut count = 0usize;
-            for cert in certs {
-                if store.add(cert).is_ok() {
-                    count += 1;
-                }
-            }
-            count
+    let result = rustls_native_certs::load_native_certs();
+    let mut count = 0usize;
+    for cert in result.certs {
+        if store.add(cert).is_ok() {
+            count += 1;
         }
-        Err(_) => 0,
     }
+    count
 }

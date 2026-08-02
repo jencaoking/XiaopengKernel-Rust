@@ -812,8 +812,6 @@ dependencies = [
 [[package]]
 name = "h3-quinn"
 version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17c799f413fceeea505236c4d8132f084ff4b55a652288d91439ee93dc24d855"
 dependencies = [
  "bytes",
  "futures",
@@ -3517,6 +3515,7 @@ dependencies = [
  "bytes",
  "h3",
  "h3-quinn",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-util",

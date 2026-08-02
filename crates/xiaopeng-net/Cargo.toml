@@ -11,6 +11,7 @@ url.workspace = true
 tracing.workspace = true
 bytes.workspace = true
 lru.workspace = true
+http.workspace = true
 
 # HTTP/1.1 + HTTP/2
 hyper.workspace = true

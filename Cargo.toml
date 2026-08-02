@@ -39,6 +39,7 @@ h3 = "0.0.6"
 h3-quinn = "0.0.7"
 bytes = "1"
 lru = "0.12"
+http = "1"
 
 # Local workspace members
 xiaopeng-common = { path = "crates/xiaopeng-common" }
@@ -49,3 +50,7 @@ xiaopeng-layout = { path = "crates/xiaopeng-layout" }
 xiaopeng-renderer = { path = "crates/xiaopeng-renderer" }
 xiaopeng-net = { path = "crates/xiaopeng-net" }
 xiaopeng-script = { path = "crates/xiaopeng-script" }
+xiaopeng-engine = { path = "crates/xiaopeng-engine" }
+
+[patch.crates-io]
+h3-quinn = { path = "vendor/h3-quinn" }

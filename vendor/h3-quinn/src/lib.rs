@@ -496,11 +496,10 @@ impl quic::RecvStream for RecvStream {
 
     #[cfg_attr(feature = "tracing", instrument(skip_all, level = "trace"))]
     fn recv_id(&self) -> StreamId {
-        self.stream
+        u64::from(self.stream
             .as_ref()
             .unwrap()
-            .id()
-            .0
+            .id())
             .try_into()
             .expect("invalid stream id")
     }
@@ -643,11 +642,10 @@ where
 
     #[cfg_attr(feature = "tracing", instrument(skip_all, level = "trace"))]
     fn send_id(&self) -> StreamId {
-        self.stream
+        u64::from(self.stream
             .as_ref()
             .unwrap()
-            .id()
-            .0
+            .id())
             .try_into()
             .expect("invalid stream id")
     }

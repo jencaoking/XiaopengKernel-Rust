@@ -3,7 +3,7 @@
 //! HTTP/3 runs exclusively over QUIC (UDP). TLS 1.3 is mandatory.
 //! ALPN is set to "h3".
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use h3_quinn::quinn;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -162,7 +162,7 @@ pub async fn send(req: &Request) -> XiaopengResult<Response> {
 
     // Collect response body chunks
     let mut body_buf = Vec::new();
-    while let Some(chunk) = req_stream.recv_data().await.map_err(|e| {
+    while let Some(mut chunk) = req_stream.recv_data().await.map_err(|e| {
         XiaopengError::NetworkError {
             url: req.url.clone(),
             message: format!("H3 recv data: {e}"),
