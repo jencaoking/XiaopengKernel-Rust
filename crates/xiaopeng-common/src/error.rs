@@ -26,9 +26,8 @@ pub enum XiaopengError {
     #[error("Network / Loader error for '{url}': {message}")]
     NetworkError { url: String, message: String },
 
-    #[error("Script execution error at line {line:?}: {message}")]
+    #[error("Script execution error: {message}")]
     ScriptError {
-        line: Option<usize>,
         message: String,
     },
 

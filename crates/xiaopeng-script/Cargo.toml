@@ -8,3 +8,4 @@ license.workspace = true
 xiaopeng-common.workspace = true
 xiaopeng-dom.workspace = true
 tracing.workspace = true
+boa_engine.workspace = true
