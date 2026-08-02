@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::{WindowEvent, ElementState, MouseButton};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 use tracing::{info, warn};
 use crate::BrowserEngine;
@@ -64,7 +64,7 @@ impl ApplicationHandler for BrowserApp {
                     window.request_redraw();
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::CursorMoved { .. } => {
                 // Dispatch mouse move to DOM
                 if let Some(doc) = &self.engine.context.document {
                     let mut js_event = xiaopeng_dom::Event::new("mousemove".to_string(), true, true);

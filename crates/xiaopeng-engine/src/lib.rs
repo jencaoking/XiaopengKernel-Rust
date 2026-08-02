@@ -17,6 +17,8 @@ pub struct EngineConfig {
     pub title: String,
     pub width: u32,
     pub height: u32,
+    pub headless: bool,
+    pub headless_output: Option<String>,
 }
 
 pub struct BrowserEngine {
@@ -43,6 +45,17 @@ impl BrowserEngine {
         })?;
         Ok(())
     }
+
+    /// Unified entrypoint. Will automatically run the window loop or fallback to headless if configured.
+    pub fn run(self) -> XiaopengResult<()> {
+        if self.config.headless {
+            info!("Headless mode: skipping winit EventLoop");
+            Ok(())
+        } else {
+            self.run_winit()
+        }
+    }
+
     pub fn new(config: EngineConfig) -> Self {
         info!(?config, "Initializing BrowserEngine");
         let js_runtime = JsRuntime::new()
@@ -133,11 +146,28 @@ impl BrowserEngine {
             display_list = xiaopeng_renderer::DisplayList::build(&layout_root);
         }
 
-        let _canvas = xiaopeng_renderer::render_display_list(
+        let canvas = xiaopeng_renderer::render_display_list(
             &display_list,
             self.config.width,
             self.config.height,
         )?;
+
+        if self.config.headless {
+            if let Some(output_path) = &self.config.headless_output {
+                info!("Headless mode: Exporting render result to {}", output_path);
+                if output_path.ends_with(".ppm") {
+                    canvas.export_ppm(output_path).map_err(|e| xiaopeng_common::XiaopengError::RenderError {
+                        backend: "tiny-skia".to_string(),
+                        message: format!("Failed to export PPM: {}", e),
+                    })?;
+                } else {
+                    canvas.export_png(output_path).map_err(|e| xiaopeng_common::XiaopengError::RenderError {
+                        backend: "tiny-skia".to_string(),
+                        message: format!("Failed to export PNG: {}", e),
+                    })?;
+                }
+            }
+        }
 
         info!("BrowserEngine: Pipeline processing complete");
         Ok(())

@@ -14,6 +14,7 @@ async fn main() -> XiaopengResult<()> {
         title: "XiaopengKernel Rust Demo".into(),
         width: 800,
         height: 600,
+        ..Default::default()
     };
 
     let mut engine = BrowserEngine::new(config);

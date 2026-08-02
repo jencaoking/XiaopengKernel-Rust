@@ -58,6 +58,31 @@ impl BitmapCanvas {
         self.pixmap.save_png(path).map_err(|e| e.to_string())
     }
 
+    pub fn export_ppm(&self, path: &str) -> Result<(), String> {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+        
+        let width = self.pixmap.width();
+        let height = self.pixmap.height();
+        
+        // PPM Header (P6 for binary)
+        writeln!(file, "P6\n{} {}\n255", width, height).map_err(|e| e.to_string())?;
+        
+        // Write raw RGB
+        let mut buffer = Vec::with_capacity((width * height * 3) as usize);
+        for pixel in self.pixmap.pixels() {
+            // tiny-skia uses premultiplied alpha, so we should ideally un-premultiply,
+            // but for a web engine we typically render over a white background so alpha is 255.
+            let c = pixel.demultiply();
+            buffer.push(c.red());
+            buffer.push(c.green());
+            buffer.push(c.blue());
+        }
+        
+        file.write_all(&buffer).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn draw_text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: Color, font_manager: Option<&crate::font::FontManager>) {
         let Some(fm) = font_manager else { return; };
         let Ok(shaped) = fm.shape_text(text, font_size) else { return; };
