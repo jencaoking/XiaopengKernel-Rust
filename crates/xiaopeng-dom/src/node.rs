@@ -650,6 +650,16 @@ impl Node {
         }
     }
 
+    pub fn query_selector(_node: &NodePtr, _selectors: &str) -> Option<NodePtr> {
+        tracing::warn!("querySelector is not natively implemented in xiaopeng-dom. Use xiaopeng-engine for CSS querying.");
+        None
+    }
+
+    pub fn query_selector_all(_node: &NodePtr, _selectors: &str) -> Vec<NodePtr> {
+        tracing::warn!("querySelectorAll is not natively implemented in xiaopeng-dom. Use xiaopeng-engine for CSS querying.");
+        Vec::new()
+    }
+
     pub fn add_event_listener(
         node_ptr: &NodePtr,
         event_type: &str,

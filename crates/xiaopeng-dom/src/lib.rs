@@ -58,6 +58,71 @@ impl Document {
     pub fn get_elements_by_class_name(&self, class_name: &str) -> Vec<NodePtr> {
         Node::get_elements_by_class_name(&self.root, class_name)
     }
+
+    pub fn get_elements_by_name(&self, name: &str) -> Vec<NodePtr> {
+        let mut results = Vec::new();
+        Self::collect_by_name(&self.root, name, &mut results);
+        results
+    }
+
+    fn collect_by_name(node: &NodePtr, name: &str, results: &mut Vec<NodePtr>) {
+        if let NodeData::Element(ref el) = node.read().unwrap().data {
+            if el.get_attribute("name") == Some(&name.to_string()) {
+                results.push(std::sync::Arc::clone(node));
+            }
+        }
+        let children = node.read().unwrap().children.clone();
+        for child in children {
+            Self::collect_by_name(&child, name, results);
+        }
+    }
+
+    pub fn get_elements_by_tag_name_ns(&self, ns: &str, local_name: &str) -> Vec<NodePtr> {
+        let mut results = Vec::new();
+        Self::collect_by_tag_name_ns(&self.root, ns, local_name, &mut results);
+        results
+    }
+
+    fn collect_by_tag_name_ns(node: &NodePtr, ns: &str, local_name: &str, results: &mut Vec<NodePtr>) {
+        if let NodeData::Element(ref el) = node.read().unwrap().data {
+            if el.namespace_uri.as_deref() == Some(ns) && el.local_name == local_name {
+                results.push(std::sync::Arc::clone(node));
+            }
+        }
+        let children = node.read().unwrap().children.clone();
+        for child in children {
+            Self::collect_by_tag_name_ns(&child, ns, local_name, results);
+        }
+    }
+
+    pub fn document_element(&self) -> Option<NodePtr> {
+        self.root.read().unwrap().first_element_child()
+    }
+
+    pub fn head(&self) -> Option<NodePtr> {
+        self.get_elements_by_tag_name("head").into_iter().next()
+    }
+
+    pub fn body(&self) -> Option<NodePtr> {
+        self.get_elements_by_tag_name("body").into_iter().next()
+    }
+
+    pub fn create_element_ns(&self, namespace_uri: &str, qualified_name: &str) -> NodePtr {
+        let (prefix, local_name) = if let Some(idx) = qualified_name.find(':') {
+            (Some(qualified_name[..idx].to_string()), qualified_name[idx + 1..].to_string())
+        } else {
+            (None, qualified_name.to_string())
+        };
+        Node::new(NodeData::Element(ElementData::new_with_namespace(Some(namespace_uri.to_string()), prefix, local_name, qualified_name.to_string())))
+    }
+
+    pub fn query_selector(&self, selectors: &str) -> Option<NodePtr> {
+        Node::query_selector(&self.root, selectors)
+    }
+
+    pub fn query_selector_all(&self, selectors: &str) -> Vec<NodePtr> {
+        Node::query_selector_all(&self.root, selectors)
+    }
 }
 
 impl Default for Document {
