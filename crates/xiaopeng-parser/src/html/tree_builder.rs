@@ -1,5 +1,6 @@
 //! HTML Tree Builder Insertion Modes and DOM Construction
 
+use std::sync::Arc;
 use tracing::{debug, trace};
 use xiaopeng_dom::{Document, NodePtr};
 use crate::html::tokenizer::HtmlToken;
@@ -50,6 +51,7 @@ pub struct HtmlTreeBuilder {
     pub frameset_ok: bool,
     pub quirks_mode: bool,
     pub foster_parenting: bool,
+    pub pending_table_character_tokens: Vec<char>,
 }
 
 impl HtmlTreeBuilder {
@@ -68,6 +70,7 @@ impl HtmlTreeBuilder {
             frameset_ok: true,
             quirks_mode: false,
             foster_parenting: false,
+            pending_table_character_tokens: Vec::new(),
         }
     }
 
@@ -296,7 +299,12 @@ impl HtmlTreeBuilder {
     }
     fn process_in_table(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(_) => self.insert_character(match token { HtmlToken::Character(c) => *c, _ => unreachable!() }),
+            HtmlToken::Character(_) => {
+                self.pending_table_character_tokens.clear();
+                self.original_insertion_mode = self.insertion_mode;
+                self.insertion_mode = InsertionMode::InTableText;
+                self.process_in_table_text(token);
+            }
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "caption" => {
                 self.insert_element_with_token(token);
@@ -324,8 +332,26 @@ impl HtmlTreeBuilder {
     }
     fn process_in_table_text(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::Character(c) if *c != '\0' => {
+                self.pending_table_character_tokens.push(*c);
+            }
+            HtmlToken::Character(_) => {}, // ignore null
             _ => {
+                let contains_non_whitespace = self.pending_table_character_tokens.iter().any(|c| !c.is_whitespace());
+                if contains_non_whitespace {
+                    // Parse error
+                    self.foster_parenting = true;
+                    let tokens = std::mem::take(&mut self.pending_table_character_tokens);
+                    for c in tokens {
+                        self.process_in_body(&HtmlToken::Character(c));
+                    }
+                    self.foster_parenting = false;
+                } else {
+                    let tokens = std::mem::take(&mut self.pending_table_character_tokens);
+                    for c in tokens {
+                        self.insert_character(c);
+                    }
+                }
                 self.insertion_mode = self.original_insertion_mode;
                 self.process_token(token.clone());
             }
@@ -482,7 +508,8 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { .. } => (),
-            HtmlToken::Character(c) if c.is_whitespace() => (),
+            HtmlToken::Character(c) if c.is_whitespace() => self.process_in_body(token),
+            HtmlToken::StartTag { name, .. } if name == "html" => self.process_in_body(token),
             HtmlToken::Eof => (),
             _ => {
                 self.insertion_mode = InsertionMode::InBody;
@@ -494,7 +521,8 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { .. } => (),
-            HtmlToken::Character(c) if c.is_whitespace() => (),
+            HtmlToken::Character(c) if c.is_whitespace() => self.process_in_frameset(token),
+            HtmlToken::StartTag { name, .. } if name == "html" => self.process_in_body(token),
             HtmlToken::Eof => (),
             _ => {
                 self.insertion_mode = InsertionMode::InFrameset;
@@ -519,8 +547,12 @@ impl HtmlTreeBuilder {
             
             let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
             
-            let (target, _) = self.appropriate_place_for_inserting_node(None);
-            xiaopeng_dom::Node::append_child(&target, &new_node);
+            let (target, before) = self.appropriate_place_for_inserting_node(None);
+            if let Some(b) = before {
+                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+            } else {
+                xiaopeng_dom::Node::append_child(&target, &new_node);
+            }
             
             self.open_elements.push(new_node);
         }
@@ -555,8 +587,15 @@ impl HtmlTreeBuilder {
     }
 
     pub fn insert_character(&mut self, c: char) {
-        let (target, _) = self.appropriate_place_for_inserting_node(None);
-        let last_child = target.read().unwrap().last_child();
+        let (target, before) = self.appropriate_place_for_inserting_node(None);
+        let last_child = if let Some(b) = &before {
+            let t = target.read().unwrap();
+            t.children.iter().position(|c| Arc::ptr_eq(c, b))
+                .and_then(|i| if i > 0 { Some(t.children[i-1].clone()) } else { None })
+        } else {
+            target.read().unwrap().last_child()
+        };
+        
         let mut appended = false;
         if let Some(lc) = last_child {
             let mut node = lc.write().unwrap();
@@ -567,15 +606,23 @@ impl HtmlTreeBuilder {
         }
         if !appended {
             let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(c.to_string()));
-            xiaopeng_dom::Node::append_child(&target, &new_node);
+            if let Some(b) = before {
+                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+            } else {
+                xiaopeng_dom::Node::append_child(&target, &new_node);
+            }
         }
     }
 
     pub fn insert_comment(&mut self, token: &HtmlToken) {
         if let HtmlToken::Comment(data) = token {
             let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Comment(data.clone()));
-            let (target, _) = self.appropriate_place_for_inserting_node(None);
-            xiaopeng_dom::Node::append_child(&target, &new_node);
+            let (target, before) = self.appropriate_place_for_inserting_node(None);
+            if let Some(b) = before {
+                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+            } else {
+                xiaopeng_dom::Node::append_child(&target, &new_node);
+            }
         }
     }
     
@@ -652,33 +699,142 @@ impl HtmlTreeBuilder {
     pub fn reconstruct_active_formatting_elements(&mut self) {
         if self.active_formatting_elements.is_empty() { return; }
         if self.active_formatting_elements.last().unwrap().is_none() { return; }
-        // For each element, insert a clone (HTML5 spec is complex, basic stub here)
-        // A full implementation requires rewinding to the marker and re-creating elements.
+        
+        let mut entry_idx = self.active_formatting_elements.len() - 1;
+        
+        while entry_idx > 0 {
+            if self.active_formatting_elements[entry_idx - 1].is_none() {
+                break;
+            }
+            let node = self.active_formatting_elements[entry_idx - 1].clone().unwrap();
+            if self.open_elements.iter().any(|n| Arc::ptr_eq(n, &node)) {
+                break;
+            }
+            entry_idx -= 1;
+        }
+        
+        while entry_idx < self.active_formatting_elements.len() {
+            let node = self.active_formatting_elements[entry_idx].clone().unwrap();
+            let name = {
+                let n = node.read().unwrap();
+                if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
+                    el.tag_name.clone()
+                } else {
+                    "".to_string()
+                }
+            };
+            
+            let mut el_data = xiaopeng_dom::ElementData::new(name);
+            {
+                let n = node.read().unwrap();
+                if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
+                    for (k, v) in &el.attributes {
+                        el_data.set_attribute(k.clone(), v.clone());
+                    }
+                }
+            }
+            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Element(el_data));
+            
+            let (target, before) = self.appropriate_place_for_inserting_node(None);
+            if let Some(b) = before {
+                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+            } else {
+                xiaopeng_dom::Node::append_child(&target, &new_node);
+            }
+            
+            self.open_elements.push(new_node.clone());
+            self.active_formatting_elements[entry_idx] = Some(new_node);
+            
+            entry_idx += 1;
+        }
     }
 
     pub fn adoption_agency_algorithm(&mut self, token: &HtmlToken) -> bool {
-        // HTML5 AAA. Return true if we handled it, false if it should fall through to "any other end tag".
-        // A full AAA is extremely complex. This stub indicates we acknowledge the tag.
-        if let HtmlToken::EndTag { name } = token {
-            let formatting_tags = ["b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u"];
-            if formatting_tags.contains(&name.as_str()) {
-                // To do AAA: 
-                // 1. Find formatting element
-                // 2. Find furthest block
-                // 3. Move nodes
-                self.generate_implied_end_tags(None);
-                self.pop_until_element(name);
+        let subject = if let HtmlToken::EndTag { name } = token {
+            name.as_str()
+        } else {
+            return false;
+        };
+
+        let formatting_tags = ["a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u"];
+        if !formatting_tags.contains(&subject) {
+            return false;
+        }
+
+        let mut outer_loop_count = 0;
+        
+        while outer_loop_count < 8 {
+            outer_loop_count += 1;
+            
+            let mut format_idx_opt = None;
+            for (idx, node_opt) in self.active_formatting_elements.iter().enumerate().rev() {
+                if let Some(node) = node_opt {
+                    let n = node.read().unwrap();
+                    if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
+                        if el.tag_name == subject {
+                            format_idx_opt = Some(idx);
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            let format_idx = match format_idx_opt {
+                Some(idx) => idx,
+                None => return false,
+            };
+            
+            let formatting_element = self.active_formatting_elements[format_idx].clone().unwrap();
+            
+            let open_idx_opt = self.open_elements.iter().rposition(|n| Arc::ptr_eq(n, &formatting_element));
+            let open_idx = match open_idx_opt {
+                Some(idx) => idx,
+                None => {
+                    self.active_formatting_elements.remove(format_idx);
+                    return true;
+                }
+            };
+            
+            let mut furthest_block_idx = None;
+            for (idx, node) in self.open_elements.iter().enumerate().skip(open_idx + 1) {
+                let is_special = {
+                    let n = node.read().unwrap();
+                    if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
+                        matches!(el.tag_name.as_str(), "address" | "applet" | "area" | "article" | "aside" | "base" | "basefont" | "bgsound" | "blockquote" | "body" | "br" | "button" | "caption" | "center" | "col" | "colgroup" | "dd" | "details" | "dir" | "div" | "dl" | "dt" | "embed" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "frame" | "frameset" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "head" | "header" | "hgroup" | "hr" | "html" | "iframe" | "img" | "input" | "keygen" | "li" | "link" | "listing" | "main" | "marquee" | "menu" | "meta" | "nav" | "noembed" | "noframes" | "noscript" | "object" | "ol" | "p" | "param" | "plaintext" | "pre" | "script" | "section" | "select" | "source" | "style" | "summary" | "table" | "tbody" | "td" | "template" | "textarea" | "tfoot" | "th" | "thead" | "title" | "tr" | "track" | "ul" | "wbr" | "xmp")
+                    } else { false }
+                };
+                if is_special {
+                    furthest_block_idx = Some(idx);
+                    break;
+                }
+            }
+            
+            if furthest_block_idx.is_none() {
+                while let Some(popped) = self.open_elements.pop() {
+                    if Arc::ptr_eq(&popped, &formatting_element) {
+                        break;
+                    }
+                }
+                self.active_formatting_elements.remove(format_idx);
                 return true;
             }
+            
+            // Simplified reparenting for stub: Just pop formatting element from both open and formatting stacks
+            self.active_formatting_elements.remove(format_idx);
+            self.open_elements.remove(open_idx);
         }
-        false
+        
+        true
     }
 
     pub fn check_quirks_mode(&mut self, token: &HtmlToken) {
-        if let HtmlToken::Doctype { name, public_id, force_quirks, .. } = token {
+        if let HtmlToken::Doctype { name, public_id, force_quirks, system_id } = token {
             if *force_quirks 
                 || name.as_deref() != Some("html")
                 || public_id.as_deref() == Some("-//W3C//DTD HTML 4.01 Frameset//EN")
+                || public_id.as_deref() == Some("-//W3C//DTD HTML 4.01//EN") && system_id.is_none()
             {
                 self.quirks_mode = true;
             }
