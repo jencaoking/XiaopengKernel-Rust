@@ -1,7 +1,7 @@
 //! Boa JavaScript Runtime — persistent context with DOM API bindings
 
 use boa_engine::{Context, JsResult, JsString, JsValue, NativeFunction, Source};
-use tracing::{info, warn};
+use tracing::info;
 use xiaopeng_common::{XiaopengError, XiaopengResult};
 
 /// A persistent JavaScript runtime built on top of the Boa engine.
@@ -194,7 +194,7 @@ fn register_timers(ctx: &mut Context) -> XiaopengResult<()> {
     Ok(())
 }
 
-fn js_set_timeout(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+fn js_set_timeout(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
     use crate::bindings::timers;
     use boa_engine::object::builtins::JsFunction;
 
@@ -213,7 +213,7 @@ fn js_set_timeout(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsRes
     Ok(JsValue::from(0_u32))
 }
 
-fn js_set_interval(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+fn js_set_interval(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
     use crate::bindings::timers;
     use boa_engine::object::builtins::JsFunction;
 

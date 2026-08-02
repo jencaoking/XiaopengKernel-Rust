@@ -12,10 +12,19 @@ pub struct CachedResponse {
     pub inserted_at: u64,
     /// max-age in seconds, if provided by Cache-Control header.
     pub max_age: Option<u64>,
+    /// Whether no-cache or must-revalidate is present.
+    pub must_revalidate: bool,
+    /// ETag header value, if any.
+    pub etag: Option<String>,
+    /// Last-Modified header value, if any.
+    pub last_modified: Option<String>,
 }
 
 impl CachedResponse {
     pub fn is_fresh(&self) -> bool {
+        if self.must_revalidate {
+            return false;
+        }
         if let Some(max_age) = self.max_age {
             let now = now_secs();
             now < self.inserted_at + max_age
@@ -50,27 +59,46 @@ impl ResourceCache {
     }
 
     pub fn get(&mut self, method: &str, url: &str) -> Option<&CachedResponse> {
-        let k = Self::key(method, url);
-        let entry = self.inner.get(&k)?;
+        let entry = self.get_entry(method, url)?;
         if entry.is_fresh() { Some(entry) } else { None }
     }
 
+    pub fn get_entry(&mut self, method: &str, url: &str) -> Option<&CachedResponse> {
+        self.inner.get(&Self::key(method, url))
+    }
+
     pub fn insert(&mut self, method: &str, url: &str, response: Response) {
-        // Parse max-age from Cache-Control header.
-        let max_age = response.headers.get("cache-control").and_then(|v| {
-            v.split(',').find_map(|part| {
-                let part = part.trim();
-                if let Some(s) = part.strip_prefix("max-age=") {
-                    s.parse::<u64>().ok()
-                } else {
-                    None
+        let mut max_age = None;
+        let mut no_store = false;
+        let mut must_revalidate = false;
+
+        if let Some(cc) = response.headers.get("cache-control") {
+            for part in cc.split(',') {
+                let part = part.trim().to_lowercase();
+                if part == "no-store" {
+                    no_store = true;
+                } else if part == "no-cache" || part == "must-revalidate" {
+                    must_revalidate = true;
+                } else if let Some(s) = part.strip_prefix("max-age=") {
+                    max_age = s.parse::<u64>().ok();
                 }
-            })
-        });
+            }
+        }
+
+        if no_store {
+            return;
+        }
+
+        let etag = response.headers.get("etag").map(|s| s.to_string());
+        let last_modified = response.headers.get("last-modified").map(|s| s.to_string());
+
         let entry = CachedResponse {
             response,
             inserted_at: now_secs(),
             max_age,
+            must_revalidate,
+            etag,
+            last_modified,
         };
         self.inner.put(Self::key(method, url), entry);
     }

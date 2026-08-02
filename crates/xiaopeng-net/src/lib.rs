@@ -101,21 +101,50 @@ impl NetClient {
 
     /// Perform an HTTP request with caching, protocol negotiation, and redirect following.
     pub async fn fetch(&self, req: Request) -> XiaopengResult<Response> {
-        let method_str = req.method.to_string();
-
-        // 1. Check cache (only for GET/HEAD).
-        if matches!(req.method, Method::Get | Method::Head) {
-            let mut cache = self.cache.lock().await;
-            if let Some(cached) = cache.get(&method_str, &req.url) {
-                info!("Cache HIT: {} {}", method_str, req.url);
-                return Ok(cached.response.clone());
-            }
-        }
-
-        // 2. Follow redirects.
         let mut current_req = req.clone();
         for hop in 0..=self.max_redirects {
+            let method_str = current_req.method.to_string();
+            let mut stale_cached_response = None;
+
+            // 1. Check cache (only for GET/HEAD).
+            if matches!(current_req.method, Method::Get | Method::Head) {
+                let mut cache = self.cache.lock().await;
+                if let Some(entry) = cache.get_entry(&method_str, &current_req.url) {
+                    if entry.is_fresh() {
+                        info!("Cache HIT (fresh): {} {}", method_str, current_req.url);
+                        return Ok(entry.response.clone());
+                    } else {
+                        // Stale. Save it to validate.
+                        stale_cached_response = Some(entry.clone());
+                    }
+                }
+            }
+
+            // If we have a stale response, set validation headers
+            if let Some(ref stale) = stale_cached_response {
+                if let Some(etag) = &stale.etag {
+                    current_req.headers.insert("if-none-match", etag);
+                } else if let Some(last_modified) = &stale.last_modified {
+                    current_req.headers.insert("if-modified-since", last_modified);
+                }
+            }
+
             let resp = self.send_one(&current_req).await?;
+
+            // Check if 304 Not Modified
+            if resp.status == 304 {
+                if let Some(mut stale) = stale_cached_response {
+                    info!("Cache HIT (304 Not Modified): {} {}", method_str, current_req.url);
+                    // Update headers (like a new Date, new Cache-Control)
+                    for (k, v) in resp.headers.iter() {
+                        stale.response.headers.insert(k, v);
+                    }
+                    
+                    let mut cache = self.cache.lock().await;
+                    cache.insert(&method_str, &current_req.url, stale.response.clone());
+                    return Ok(stale.response);
+                }
+            }
 
             // Cache the response if it's a success.
             if resp.ok() && matches!(current_req.method, Method::Get | Method::Head) {
