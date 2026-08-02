@@ -29,7 +29,8 @@ pub fn parse_html(input: &str) -> XiaopengResult<Document> {
 #[instrument(skip(input), fields(input_len = input.len()))]
 pub fn parse_css(input: &str) -> XiaopengResult<StyleSheet> {
     info!("Parsing CSS input");
-    Ok(StyleSheet::default())
+    let mut parser = css::parser::CssParser::new(input);
+    Ok(parser.parse_stylesheet())
 }
 
 #[cfg(test)]
