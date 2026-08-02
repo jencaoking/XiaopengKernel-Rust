@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 use bytes::Bytes;
+use tokio::sync::mpsc;
+use xiaopeng_common::XiaopengResult;
 
 // ---------------------------------------------------------------------------
 // Method
@@ -179,3 +181,21 @@ impl Response {
         String::from_utf8_lossy(&self.body)
     }
 }
+
+// ---------------------------------------------------------------------------
+// StreamResponse
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct StreamResponse {
+    pub status:  u16,
+    pub headers: Headers,
+    pub version: HttpVersion,
+    pub body_stream: mpsc::Receiver<XiaopengResult<Bytes>>,
+}
+
+impl StreamResponse {
+    pub fn ok(&self) -> bool { self.status >= 200 && self.status < 300 }
+    pub fn redirect(&self) -> bool { self.status >= 300 && self.status < 400 }
+}
+

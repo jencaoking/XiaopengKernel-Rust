@@ -19,7 +19,7 @@ pub mod request;
 pub mod tls;
 
 pub use cache::ResourceCache;
-pub use request::{Headers, HttpVersion, Method, Request, Response};
+pub use request::{Headers, HttpVersion, Method, Request, Response, StreamResponse};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -337,6 +337,48 @@ impl NetClient {
             }
         }
     }
+    
+    pub async fn fetch_stream(&self, req: Request) -> XiaopengResult<StreamResponse> {
+        self.check_security_policy(&mut req.clone())?;
+        
+        let use_h3 = matches!(self.protocol_hint, ProtocolHint::Http3) || {
+            if let Ok(url) = url::Url::parse(&req.url) {
+                if let Some(host) = url.host_str() {
+                    self.h3_alt_svc.lock().await.contains(host)
+                } else { false }
+            } else { false }
+        };
+
+        if use_h3 {
+            match http3::send_stream(&req, &self.h3_pool).await {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    warn!("HTTP/3 stream failed ({e}), falling back to HTTP/2");
+                }
+            }
+        }
+
+        match self.protocol_hint {
+            ProtocolHint::Http1 => http1::send_stream(&req, &self.h1_pool).await,
+            ProtocolHint::Http2 => http2::send_stream(&req, &self.h2_pool).await,
+            ProtocolHint::Http3 => {
+                match http2::send_stream(&req, &self.h2_pool).await {
+                    Ok(r) => Ok(r),
+                    Err(_) => http1::send_stream(&req, &self.h1_pool).await,
+                }
+            }
+            ProtocolHint::Auto => {
+                if req.url.starts_with("https://") {
+                    match http2::send_stream(&req, &self.h2_pool).await {
+                        Ok(r) => Ok(r),
+                        Err(_) => http1::send_stream(&req, &self.h1_pool).await,
+                    }
+                } else {
+                    http1::send_stream(&req, &self.h1_pool).await
+                }
+            }
+        }
+    }
 
     /// Invalidate the cache entry for a given method + URL.
     pub async fn invalidate_cache(&self, method: &str, url: &str) {
@@ -365,6 +407,12 @@ impl Default for NetClient {
 pub async fn fetch(url: &str) -> XiaopengResult<Response> {
     NetClient::new()
         .fetch(Request::get(url))
+        .await
+}
+
+pub async fn fetch_stream(url: &str) -> XiaopengResult<StreamResponse> {
+    NetClient::new()
+        .fetch_stream(Request::get(url))
         .await
 }
 

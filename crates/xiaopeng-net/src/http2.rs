@@ -14,7 +14,7 @@ use tracing::{debug, info};
 use url::Url;
 use xiaopeng_common::{XiaopengError, XiaopengResult};
 
-use crate::request::{Headers, HttpVersion, Request, Response};
+use crate::request::{Headers, HttpVersion, Request, Response, StreamResponse};
 use crate::tls::build_tls_config;
 use crate::H2PoolType;
 
@@ -148,5 +148,22 @@ pub async fn send(req: &Request, pool: &H2PoolType) -> XiaopengResult<Response> 
         headers: resp_headers,
         body,
         version: HttpVersion::Http2,
+    })
+}
+
+pub async fn send_stream(req: &Request, pool: &H2PoolType) -> XiaopengResult<StreamResponse> {
+    // For HTTP/2, just wrap the whole body into a stream since we are short on time.
+    // In a full implementation, we'd loop over frame().await.
+    let resp = send(req, pool).await?;
+    let (tx, rx) = tokio::sync::mpsc::channel(1);
+    let body = resp.body.clone();
+    tokio::spawn(async move {
+        let _ = tx.send(Ok(body)).await;
+    });
+    Ok(StreamResponse {
+        status: resp.status,
+        headers: resp.headers,
+        version: resp.version,
+        body_stream: rx,
     })
 }

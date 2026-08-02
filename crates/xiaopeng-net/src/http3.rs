@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use url::Url;
 use xiaopeng_common::{XiaopengError, XiaopengResult};
 
-use crate::request::{Headers, HttpVersion, Request, Response};
+use crate::request::{Headers, HttpVersion, Request, Response, StreamResponse};
 use crate::tls::build_tls_config;
 use crate::H3PoolType;
 
@@ -198,5 +198,20 @@ pub async fn send(req: &Request, pool: &H3PoolType) -> XiaopengResult<Response> 
         headers: resp_headers,
         body,
         version: HttpVersion::Http3,
+    })
+}
+
+pub async fn send_stream(req: &Request, pool: &H3PoolType) -> XiaopengResult<StreamResponse> {
+    let resp = send(req, pool).await?;
+    let (tx, rx) = tokio::sync::mpsc::channel(1);
+    let body = resp.body.clone();
+    tokio::spawn(async move {
+        let _ = tx.send(Ok(body)).await;
+    });
+    Ok(StreamResponse {
+        status: resp.status,
+        headers: resp.headers,
+        version: resp.version,
+        body_stream: rx,
     })
 }

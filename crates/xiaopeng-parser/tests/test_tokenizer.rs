@@ -1,15 +1,22 @@
 use xiaopeng_parser::html::tokenizer::{HtmlTokenizer, HtmlToken};
 
+fn create_tokenizer(input: &str) -> HtmlTokenizer {
+    let mut t = HtmlTokenizer::new();
+    t.push_chunk(input);
+    t.end_of_file();
+    t
+}
+
 #[test]
 fn test_tokenizer_empty_input() {
-    let mut tokenizer = HtmlTokenizer::new("");
+    let mut tokenizer = create_tokenizer("");
     let token = tokenizer.next_token().unwrap();
     assert_eq!(token, Some(HtmlToken::Eof));
 }
 
 #[test]
 fn test_tokenizer_simple_text() {
-    let mut tokenizer = HtmlTokenizer::new("Hello World");
+    let mut tokenizer = create_tokenizer("Hello World");
     let mut tokens = Vec::new();
     while let Ok(Some(token)) = tokenizer.next_token() {
         tokens.push(token);
@@ -28,7 +35,7 @@ fn test_tokenizer_simple_text() {
 
 #[test]
 fn test_tokenizer_simple_start_tag() {
-    let mut tokenizer = HtmlTokenizer::new("<div>");
+    let mut tokenizer = create_tokenizer("<div>");
     let mut tokens = Vec::new();
     while let Ok(Some(token)) = tokenizer.next_token() {
         tokens.push(token);
@@ -51,7 +58,7 @@ fn test_tokenizer_simple_start_tag() {
 #[test]
 fn test_tokenizer_attributes() {
     let html = "<div id=\"test\" class='foo' disabled>";
-    let mut tokenizer = HtmlTokenizer::new(html);
+    let mut tokenizer = create_tokenizer(html);
 
     let token = tokenizer.next_token().unwrap().unwrap();
     match token {
@@ -76,7 +83,7 @@ fn test_tokenizer_attributes() {
 #[test]
 fn test_tokenizer_rawtext_script() {
     let input = "<script>var a = b < c;</script>";
-    let mut tokenizer = HtmlTokenizer::new(input);
+    let mut tokenizer = create_tokenizer(input);
 
     let token1 = tokenizer.next_token().unwrap().unwrap();
     if let HtmlToken::StartTag { name, self_closing, .. } = token1 {

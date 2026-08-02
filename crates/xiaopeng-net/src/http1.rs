@@ -14,7 +14,7 @@ use tracing::{debug, info};
 use url::Url;
 use xiaopeng_common::{XiaopengError, XiaopengResult};
 
-use crate::request::{Headers, HttpVersion, Request, Response};
+use crate::request::{Headers, HttpVersion, Request, Response, StreamResponse};
 use crate::tls::build_tls_config;
 use crate::H1PoolType;
 
@@ -173,5 +173,157 @@ async fn send_h1_request(
         headers: resp_headers,
         body: body_bytes,
         version: HttpVersion::Http1_1,
+    })
+}
+
+pub async fn send_stream(req: &Request, pool: &H1PoolType) -> XiaopengResult<StreamResponse> {
+    let url = Url::parse(&req.url).map_err(|e| XiaopengError::NetworkError {
+        url: req.url.clone(),
+        message: format!("invalid URL: {e}"),
+    })?;
+
+    let scheme  = url.scheme();
+    let host    = url.host_str().unwrap_or("localhost");
+    let port    = url.port_or_known_default().unwrap_or(80);
+    let path_and_query = {
+        let p = url.path();
+        let q = url.query().map(|q| format!("?{q}")).unwrap_or_default();
+        format!("{p}{q}")
+    };
+    let authority = format!("{host}:{port}");
+    let path = if path_and_query.is_empty() { "/".to_string() } else { path_and_query };
+
+    let method: hyper::Method = req.method.clone().into();
+    let body_bytes = req.body.clone().unwrap_or_default();
+
+    let host_key = format!("{}://{}", scheme, authority);
+
+    let mut sender_opt = None;
+    if let Some(mut s) = pool.lock().await.take(&host_key) {
+        if s.ready().await.is_ok() {
+            sender_opt = Some(s);
+        }
+    }
+
+    let mut sender = match sender_opt {
+        Some(s) => s,
+        None => {
+            let tcp = TcpStream::connect(&authority).await.map_err(|e| XiaopengError::NetworkError {
+                url: req.url.clone(),
+                message: format!("TCP connect failed: {e}"),
+            })?;
+
+            match scheme {
+                "https" => {
+                    let mut tls_config = (*build_tls_config()).clone();
+                    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+                    let connector = TlsConnector::from(Arc::new(tls_config));
+                    let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
+                        .map_err(|e| XiaopengError::NetworkError {
+                            url: req.url.clone(),
+                            message: format!("invalid server name: {e}"),
+                        })?;
+                    let tls_stream = connector.connect(server_name, tcp).await.map_err(|e| {
+                        XiaopengError::NetworkError {
+                            url: req.url.clone(),
+                            message: format!("TLS handshake failed: {e}"),
+                        }
+                    })?;
+                    let io = TokioIo::new(tls_stream);
+                    let (sender, conn) =
+                        hyper::client::conn::http1::handshake(io).await.map_err(|e| {
+                            XiaopengError::NetworkError {
+                                url: req.url.clone(),
+                                message: format!("HTTP/1.1 handshake failed: {e}"),
+                            }
+                        })?;
+                    tokio::spawn(conn);
+                    sender
+                }
+                "http" => {
+                    let io = TokioIo::new(tcp);
+                    let (sender, conn) =
+                        hyper::client::conn::http1::handshake(io).await.map_err(|e| {
+                            XiaopengError::NetworkError {
+                                url: req.url.clone(),
+                                message: format!("HTTP/1.1 handshake failed: {e}"),
+                            }
+                        })?;
+                    tokio::spawn(conn);
+                    sender
+                }
+                _ => return Err(XiaopengError::NetworkError {
+                    url: req.url.clone(),
+                    message: format!("unsupported scheme: {scheme}"),
+                }),
+            }
+        }
+    };
+
+    let mut hyper_req = HyperRequest::builder()
+        .method(method)
+        .uri(path)
+        .header("host", authority)
+        .header("user-agent", "XiaopengKernel/0.4")
+        .header("accept", "*/*");
+
+    for (k, v) in req.headers.iter() {
+        hyper_req = hyper_req.header(k, v);
+    }
+
+    let hyper_req = hyper_req
+        .body(Full::new(body_bytes))
+        .map_err(|e| XiaopengError::NetworkError {
+            url: req.url.clone(),
+            message: format!("build request: {e}"),
+        })?;
+
+    let hyper_resp = sender.send_request(hyper_req).await.map_err(|e| {
+        XiaopengError::NetworkError {
+            url: req.url.clone(),
+            message: format!("send request: {e}"),
+        }
+    })?;
+
+    let status = hyper_resp.status().as_u16();
+    let mut resp_headers = Headers::new();
+    for (k, v) in hyper_resp.headers() {
+        resp_headers.insert(k.as_str(), v.to_str().unwrap_or(""));
+    }
+
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    let mut body = hyper_resp.into_body();
+    let url_clone = req.url.clone();
+    
+    // We cannot put the sender back into the pool until the stream finishes,
+    // but in H1, the connection is occupied while streaming. We'll just let it drop for now
+    // or put it back after it finishes. For simplicity, we drop it (no keep-alive across streams).
+
+    tokio::spawn(async move {
+        while let Some(frame_res) = http_body_util::BodyExt::frame(&mut body).await {
+            match frame_res {
+                Ok(frame) => {
+                    if let Ok(data) = frame.into_data() {
+                        if tx.send(Ok(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(XiaopengError::NetworkError {
+                        url: url_clone.clone(),
+                        message: format!("read body frame: {e}"),
+                    })).await;
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(StreamResponse {
+        status,
+        headers: resp_headers,
+        version: HttpVersion::Http1_1,
+        body_stream: rx,
     })
 }

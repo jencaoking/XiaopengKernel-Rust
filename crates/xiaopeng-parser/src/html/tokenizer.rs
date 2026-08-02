@@ -1,6 +1,6 @@
 //! WHATWG HTML Tokenizer State Machine
 
-use std::str::Chars;
+use std::collections::VecDeque;
 use tracing::trace;
 use xiaopeng_common::XiaopengResult;
 
@@ -84,8 +84,9 @@ pub enum TokenizerState {
     Plaintext,
 }
 
-pub struct HtmlTokenizer<'a> {
-    input: Chars<'a>,
+pub struct HtmlTokenizer {
+    buffer: VecDeque<char>,
+    eof: bool,
     current_char: Option<char>,
     reconsume: bool,
     pub state: TokenizerState,
@@ -106,10 +107,11 @@ pub struct HtmlTokenizer<'a> {
     temp_buffer: String,
 }
 
-impl<'a> HtmlTokenizer<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl HtmlTokenizer {
+    pub fn new() -> Self {
         Self {
-            input: input.chars(),
+            buffer: VecDeque::new(),
+            eof: false,
             current_char: None,
             reconsume: false,
             state: TokenizerState::Data,
@@ -123,14 +125,22 @@ impl<'a> HtmlTokenizer<'a> {
         }
     }
 
-    fn consume_next(&mut self) -> Option<char> {
+    pub fn push_chunk(&mut self, chunk: &str) {
+        self.buffer.extend(chunk.chars());
+    }
+
+    pub fn end_of_file(&mut self) {
+        self.eof = true;
+    }
+
+    fn consume_next(&mut self) -> Result<Option<char>, ()> {
         if self.reconsume {
             self.reconsume = false;
-            return self.current_char;
+            return Ok(self.current_char);
         }
 
-        self.current_char = self.input.next();
-        if let Some(c) = self.current_char {
+        if let Some(c) = self.buffer.pop_front() {
+            self.current_char = Some(c);
             self.position += 1;
             if c == '\n' {
                 self.line += 1;
@@ -138,8 +148,13 @@ impl<'a> HtmlTokenizer<'a> {
             } else {
                 self.column += 1;
             }
+            Ok(Some(c))
+        } else if self.eof {
+            self.current_char = None;
+            Ok(None)
+        } else {
+            Err(())
         }
-        self.current_char
     }
 
     fn reconsume_in(&mut self, state: TokenizerState) {
@@ -223,7 +238,11 @@ impl<'a> HtmlTokenizer<'a> {
 
     pub fn next_token(&mut self) -> XiaopengResult<Option<HtmlToken>> {
         loop {
-            let c = self.consume_next();
+            let c = match self.consume_next() {
+                Ok(Some(ch)) => Some(ch),
+                Ok(None) => None,
+                Err(()) => return Ok(None), // starved
+            };
             let eof = c.is_none();
             let ch = c.unwrap_or('\0');
 
@@ -441,42 +460,45 @@ impl<'a> HtmlTokenizer<'a> {
                     }
                 }
                 TokenizerState::MarkupDeclarationOpen => {
-                    // We've already consumed one char after `<!`.
-                    // Per spec, if the *next two chars* are `--`, emit comment.
-                    // We've consumed the first of those two; we need to peek at the second.
                     if ch == '-' {
-                        // Consumed first `-`. Now consume the second.
-                        let next = self.consume_next();
-                        if next == Some('-') {
-                            // Correct: `<!--` sequence complete, enter CommentStart
-                            self.current_token = Some(HtmlToken::Comment(String::new()));
-                            self.state = TokenizerState::CommentStart;
-                        } else {
-                            // Only one `-`, treat as bogus comment
-                            self.current_token = Some(HtmlToken::Comment(String::new()));
-                            self.reconsume_in(TokenizerState::BogusComment);
-                        }
-                    } else if ch.eq_ignore_ascii_case(&'D') {
-                        // Possibly `DOCTYPE`. Consume remaining `OCTYPE` (6 chars).
-                        let remaining = ['O', 'C', 'T', 'Y', 'P', 'E'];
-                        let mut matched = true;
-                        for expected in &remaining {
-                            match self.consume_next() {
-                                Some(c) if c.to_ascii_uppercase() == *expected => {}
-                                _ => { matched = false; break; }
+                        if let Some(&next_ch) = self.buffer.front() {
+                            if next_ch == '-' {
+                                self.consume_next().unwrap(); // consume the second '-'
+                                self.current_token = Some(HtmlToken::Comment(String::new()));
+                                self.state = TokenizerState::CommentStart;
+                            } else {
+                                self.current_token = Some(HtmlToken::Comment(String::new()));
+                                self.reconsume_in(TokenizerState::BogusComment);
                             }
-                        }
-                        if matched {
-                            self.current_token = Some(HtmlToken::Doctype {
-                                name: None,
-                                public_id: None,
-                                system_id: None,
-                                force_quirks: false,
-                            });
-                            self.state = TokenizerState::BeforeDoctypeName;
-                        } else {
+                        } else if self.eof {
                             self.current_token = Some(HtmlToken::Comment(String::new()));
                             self.reconsume_in(TokenizerState::BogusComment);
+                        } else {
+                            self.reconsume_in(TokenizerState::MarkupDeclarationOpen);
+                            return Ok(None);
+                        }
+                    } else if ch.eq_ignore_ascii_case(&'d') {
+                        if self.buffer.len() >= 6 {
+                            let s: String = self.buffer.iter().take(6).collect();
+                            if s.eq_ignore_ascii_case("octype") {
+                                for _ in 0..6 { self.consume_next().unwrap(); }
+                                self.current_token = Some(HtmlToken::Doctype {
+                                    name: None,
+                                    public_id: None,
+                                    system_id: None,
+                                    force_quirks: false,
+                                });
+                                self.state = TokenizerState::BeforeDoctypeName;
+                            } else {
+                                self.current_token = Some(HtmlToken::Comment(String::new()));
+                                self.reconsume_in(TokenizerState::BogusComment);
+                            }
+                        } else if self.eof {
+                            self.current_token = Some(HtmlToken::Comment(String::new()));
+                            self.reconsume_in(TokenizerState::BogusComment);
+                        } else {
+                            self.reconsume_in(TokenizerState::MarkupDeclarationOpen);
+                            return Ok(None);
                         }
                     } else {
                         self.current_token = Some(HtmlToken::Comment(String::new()));

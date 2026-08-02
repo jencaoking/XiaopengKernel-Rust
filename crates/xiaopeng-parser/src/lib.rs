@@ -12,7 +12,9 @@ use xiaopeng_dom::Document;
 #[instrument(skip(input), fields(input_len = input.len()))]
 pub fn parse_html(input: &str) -> XiaopengResult<Document> {
     info!("Parsing HTML input");
-    let mut tokenizer = HtmlTokenizer::new(input);
+    let mut tokenizer = HtmlTokenizer::new();
+    tokenizer.push_chunk(input);
+    tokenizer.end_of_file();
     let mut tree_builder = HtmlTreeBuilder::new();
     
     while let Ok(Some(token)) = tokenizer.next_token() {

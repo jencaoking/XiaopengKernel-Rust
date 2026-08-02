@@ -8,6 +8,7 @@ pub use event_loop::EventLoop;
 use tracing::{info, instrument, warn};
 use xiaopeng_common::XiaopengResult;
 use xiaopeng_script::JsRuntime;
+use xiaopeng_parser::html::{HtmlTokenizer, HtmlTreeBuilder, HtmlToken};
 
 #[derive(Debug, Default, Clone)]
 pub struct EngineConfig {
@@ -43,7 +44,53 @@ impl BrowserEngine {
     pub fn load_html(&mut self, html_input: &str) -> XiaopengResult<()> {
         info!("BrowserEngine: Triggering HTML document loading pipeline");
         let doc = xiaopeng_parser::parse_html(html_input)?;
+        self.finish_loading(doc)?;
+        Ok(())
+    }
 
+    #[instrument(skip(self, url))]
+    pub async fn load_url(&mut self, url: &str) -> XiaopengResult<()> {
+        let url_clone = url.to_string();
+        info!("BrowserEngine: Triggering background streaming load pipeline for {}", url_clone);
+        
+        let doc = tokio::spawn(async move {
+            let resp = xiaopeng_net::fetch_stream(&url_clone).await?;
+            let mut rx = resp.body_stream;
+
+            let mut tokenizer = HtmlTokenizer::new();
+            let mut tree_builder = HtmlTreeBuilder::new();
+
+            while let Some(chunk_res) = rx.recv().await {
+                let chunk = chunk_res?;
+                let chunk_str = String::from_utf8_lossy(&chunk);
+                tokenizer.push_chunk(&chunk_str);
+
+                while let Ok(Some(token)) = tokenizer.next_token() {
+                    tree_builder.process_token(token);
+                }
+            }
+
+            tokenizer.end_of_file();
+            while let Ok(Some(token)) = tokenizer.next_token() {
+                let is_eof = token == HtmlToken::Eof;
+                tree_builder.process_token(token);
+                if is_eof {
+                    break;
+                }
+            }
+            Ok::<_, xiaopeng_common::XiaopengError>(tree_builder.document)
+        })
+        .await
+        .map_err(|e| xiaopeng_common::XiaopengError::NetworkError {
+            url: url.to_string(),
+            message: format!("Background parsing task panicked: {e}"),
+        })??;
+
+        self.finish_loading(doc)?;
+        Ok(())
+    }
+
+    fn finish_loading(&mut self, doc: xiaopeng_dom::Document) -> XiaopengResult<()> {
         // --- Expose DOM to JS Engine ---
         let root_id = xiaopeng_script::bindings::dom::expose_node(std::sync::Arc::clone(&doc.root));
         let init_script = format!("____init_document({});", root_id);
