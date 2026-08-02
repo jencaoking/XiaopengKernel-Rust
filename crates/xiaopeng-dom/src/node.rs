@@ -24,34 +24,152 @@ pub enum NodeType {
     Notation = 12,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttrData {
+    pub namespace_uri: Option<String>,
+    pub prefix: Option<String>,
+    pub local_name: String,
+    pub value: String,
+}
+
+impl AttrData {
+    pub fn name(&self) -> String {
+        if let Some(prefix) = &self.prefix {
+            format!("{}:{}", prefix, self.local_name)
+        } else {
+            self.local_name.clone()
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NamedNodeMap {
+    pub items: Vec<AttrData>,
+}
+
+impl NamedNodeMap {
+    pub fn new() -> Self {
+        Self { items: Vec::new() }
+    }
+    
+    pub fn get_named_item(&self, name: &str) -> Option<&AttrData> {
+        self.items.iter().find(|a| a.name() == name)
+    }
+
+    pub fn get_named_item_ns(&self, namespace_uri: Option<&str>, local_name: &str) -> Option<&AttrData> {
+        self.items.iter().find(|a| a.namespace_uri.as_deref() == namespace_uri && a.local_name == local_name)
+    }
+
+    pub fn set_named_item(&mut self, attr: AttrData) {
+        if let Some(existing) = self.items.iter_mut().find(|a| a.name() == attr.name()) {
+            *existing = attr;
+        } else {
+            self.items.push(attr);
+        }
+    }
+
+    pub fn set_named_item_ns(&mut self, attr: AttrData) {
+        let ns = attr.namespace_uri.clone();
+        let local = attr.local_name.clone();
+        if let Some(existing) = self.items.iter_mut().find(|a| a.namespace_uri == ns && a.local_name == local) {
+            *existing = attr;
+        } else {
+            self.items.push(attr);
+        }
+    }
+
+    pub fn remove_named_item(&mut self, name: &str) {
+        self.items.retain(|a| a.name() != name);
+    }
+
+    pub fn remove_named_item_ns(&mut self, namespace_uri: Option<&str>, local_name: &str) {
+        self.items.retain(|a| !(a.namespace_uri.as_deref() == namespace_uri && a.local_name == local_name));
+    }
+    
+    pub fn iter(&self) -> std::slice::Iter<'_, AttrData> {
+        self.items.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a NamedNodeMap {
+    type Item = &'a AttrData;
+    type IntoIter = std::slice::Iter<'a, AttrData>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ElementData {
+    pub namespace_uri: Option<String>,
+    pub prefix: Option<String>,
+    pub local_name: String,
     pub tag_name: String,
-    pub attributes: HashMap<String, String>,
+    pub attributes: NamedNodeMap,
 }
 
 impl ElementData {
     pub fn new(tag_name: String) -> Self {
         Self {
+            namespace_uri: None,
+            prefix: None,
+            local_name: tag_name.clone(),
             tag_name,
-            attributes: HashMap::new(),
+            attributes: NamedNodeMap::new(),
+        }
+    }
+
+    pub fn new_with_namespace(namespace_uri: Option<String>, prefix: Option<String>, local_name: String, tag_name: String) -> Self {
+        Self {
+            namespace_uri,
+            prefix,
+            local_name,
+            tag_name,
+            attributes: NamedNodeMap::new(),
         }
     }
 
     pub fn get_attribute(&self, name: &str) -> Option<&String> {
-        self.attributes.get(name)
+        self.attributes.get_named_item(name).map(|a| &a.value)
     }
 
     pub fn set_attribute(&mut self, name: String, value: String) {
-        self.attributes.insert(name, value);
+        self.attributes.set_named_item(AttrData {
+            namespace_uri: None,
+            prefix: None,
+            local_name: name,
+            value,
+        });
     }
 
     pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes.contains_key(name)
+        self.attributes.get_named_item(name).is_some()
     }
 
     pub fn remove_attribute(&mut self, name: &str) {
-        self.attributes.remove(name);
+        self.attributes.remove_named_item(name);
+    }
+
+    pub fn get_attribute_ns(&self, namespace_uri: Option<&str>, local_name: &str) -> Option<&String> {
+        self.attributes.get_named_item_ns(namespace_uri, local_name).map(|a| &a.value)
+    }
+
+    pub fn set_attribute_ns(&mut self, namespace_uri: Option<String>, prefix: Option<String>, local_name: String, value: String) {
+        self.attributes.set_named_item_ns(AttrData {
+            namespace_uri,
+            prefix,
+            local_name,
+            value,
+        });
+    }
+
+    pub fn has_attribute_ns(&self, namespace_uri: Option<&str>, local_name: &str) -> bool {
+        self.attributes.get_named_item_ns(namespace_uri, local_name).is_some()
+    }
+
+    pub fn remove_attribute_ns(&mut self, namespace_uri: Option<&str>, local_name: &str) {
+        self.attributes.remove_named_item_ns(namespace_uri, local_name);
     }
 
     pub fn id(&self) -> Option<&String> {
@@ -109,7 +227,7 @@ pub enum NodeData {
     DocumentType(DocumentTypeData),
     DocumentFragment,
     Element(ElementData),
-    Attr(String, String),
+    Attr(AttrData),
     Text(String),
     CDataSection(String),
     ProcessingInstruction(ProcessingInstructionData),
@@ -150,7 +268,7 @@ impl Node {
             NodeData::DocumentType(_) => NodeType::DocumentType,
             NodeData::DocumentFragment => NodeType::DocumentFragment,
             NodeData::Element(_) => NodeType::Element,
-            NodeData::Attr(_, _) => NodeType::Attribute,
+            NodeData::Attr(_) => NodeType::Attribute,
             NodeData::Text(_) => NodeType::Text,
             NodeData::CDataSection(_) => NodeType::CDataSection,
             NodeData::ProcessingInstruction(_) => NodeType::ProcessingInstruction,
@@ -264,7 +382,7 @@ impl Node {
     pub fn text_content(&self) -> String {
         match &self.data {
             NodeData::Text(t) | NodeData::CDataSection(t) => t.clone(),
-            NodeData::Attr(_, v) => v.clone(),
+            NodeData::Attr(attr) => attr.value.clone(),
             NodeData::Comment(_) | NodeData::ProcessingInstruction(_) | NodeData::DocumentType(_) 
             | NodeData::Notation(_) | NodeData::Entity(_) | NodeData::EntityReference(_) => String::new(),
             NodeData::Document | NodeData::DocumentFragment | NodeData::Element(_) => {
@@ -378,8 +496,8 @@ impl Node {
             }
             NodeData::Element(el) => {
                 let mut attrs = String::new();
-                for (k, v) in &el.attributes {
-                    attrs.push_str(&format!(" {}=\"{}\"", k, Self::escape_html_attr(v)));
+                for attr in &el.attributes {
+                    attrs.push_str(&format!(" {}=\"{}\"", attr.name(), Self::escape_html_attr(&attr.value)));
                 }
                 
                 let tag_lower = el.tag_name.to_lowercase();

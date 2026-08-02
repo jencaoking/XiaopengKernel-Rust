@@ -745,8 +745,8 @@ impl HtmlTreeBuilder {
             {
                 let n = node.read().unwrap();
                 if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
-                    for (k, v) in &el.attributes {
-                        el_data.set_attribute(k.clone(), v.clone());
+                    for attr in &el.attributes {
+                        el_data.set_attribute_ns(attr.namespace_uri.clone(), attr.prefix.clone(), attr.local_name.clone(), attr.value.clone());
                     }
                 }
             }

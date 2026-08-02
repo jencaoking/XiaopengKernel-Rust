@@ -4,7 +4,7 @@ pub mod event;
 pub mod node;
 
 pub use event::{Event, EventPhase, EventListener};
-pub use node::{ElementData, Node, NodeData, NodePtr, NodeType, DocumentTypeData, ProcessingInstructionData};
+pub use node::{ElementData, Node, NodeData, NodePtr, NodeType, DocumentTypeData, ProcessingInstructionData, AttrData, NamedNodeMap};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
