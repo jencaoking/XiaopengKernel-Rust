@@ -65,17 +65,13 @@ impl JsRuntime {
         Ok(())
     }
 
-    /// Fire any timers whose deadline has passed, then drain the microtask queue.
+    /// Fire any timers whose deadline has passed, then drain microtasks.
     /// Call this once per event-loop tick.
     /// Returns (timers_fired, microtasks_drained).
     pub fn tick(&mut self) -> (usize, usize) {
         let timers = crate::bindings::timers::tick_timers(&mut self.context);
-        // After each timer callback, drain microtasks (WHATWG checkpoint).
-        let micros = if timers > 0 {
-            crate::bindings::timers::drain_microtasks(&mut self.context)
-        } else {
-            0
-        };
+        // Always drain microtasks after a tick (timers may have resolved Promises).
+        let micros = crate::bindings::timers::drain_microtasks(&mut self.context);
         (timers, micros)
     }
 
@@ -180,14 +176,15 @@ fn register_timers(ctx: &mut Context) -> XiaopengResult<()> {
     reg_callable(ctx, "clearInterval",             1, NativeFunction::from_fn_ptr(js_clear_timer))?;
     reg_builtin(ctx,  "____enqueue_microtask",     1, NativeFunction::from_fn_ptr(js_enqueue_microtask))?;
 
-    // JS wrappers: coerce delay, default to 0 ms
+    // JS wrappers: coerce delay, default to 0 ms; forward extra arguments.
     let js_wrap = r#"
         function setTimeout(fn, delay) {
-            var args = Array.prototype.slice.call(arguments, 2);
-            return ____setTimeout_native(fn, (delay >>> 0) || 0);
+            var extra = Array.prototype.slice.call(arguments, 2);
+            return ____setTimeout_native.apply(null, [fn, (delay >>> 0) || 0].concat(extra));
         }
         function setInterval(fn, delay) {
-            return ____setInterval_native(fn, (delay >>> 0) || 0);
+            var extra = Array.prototype.slice.call(arguments, 2);
+            return ____setInterval_native.apply(null, [fn, (delay >>> 0) || 0].concat(extra));
         }
     "#;
     ctx.eval(Source::from_bytes(js_wrap))

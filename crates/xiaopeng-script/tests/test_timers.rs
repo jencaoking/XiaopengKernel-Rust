@@ -1,7 +1,7 @@
 //! Integration tests: setTimeout / setInterval / clearTimeout / Promise / queueMicrotask
 
 use xiaopeng_script::JsRuntime;
-use std::time::Duration;
+
 
 fn rt() -> JsRuntime {
     JsRuntime::new().expect("JsRuntime::new")

@@ -1,44 +1,41 @@
-//! Timer infrastructure for setTimeout / setInterval / clearTimeout / clearInterval.
+//! Thread-local timer registry for setTimeout / setInterval / clearTimeout / clearInterval.
+//! Also manages the microtask queue for Promise integration.
 //!
-//! Design: since JsFunction is not Send, we store pending timers in a thread_local.
-//! BrowserEngine calls `tick_timers(ctx, now_ms)` once per event-loop turn,
-//! which fires any callbacks whose deadline has passed.
+//! JsFunction is not Send, so we use thread_local storage. Boa's Context always
+//! runs on the same thread, so this is safe.
 
 use boa_engine::{Context, JsValue};
 use boa_engine::object::builtins::JsFunction;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use tracing::{info, warn};
+use std::collections::BTreeMap;
+use tracing::warn;
 
 /// A single pending timer entry.
 struct TimerEntry {
-    /// Absolute deadline in milliseconds (from engine epoch).
-    deadline_ms: u64,
     /// The JS callback to invoke.
     func: JsFunction,
-    /// Arguments to pass to the callback (usually empty for timers).
+    /// Arguments to pass to the callback.
     args: Vec<JsValue>,
     /// If Some(interval_ms), re-schedule after firing. None for one-shot setTimeout.
     interval_ms: Option<u64>,
 }
 
 thread_local! {
-    /// timer_id → TimerEntry
-    static PENDING_TIMERS: RefCell<HashMap<u32, TimerEntry>> = RefCell::new(HashMap::new());
+    /// Ordered timer map: (deadline_ms, timer_id) → TimerEntry.
+    /// Using BTreeMap guarantees:
+    ///   1. Timers are iterated in deadline order (earliest first).
+    ///   2. For equal deadlines, lower timer_id fires first (insertion order).
+    static PENDING_TIMERS: RefCell<BTreeMap<(u64, u32), TimerEntry>> =
+        RefCell::new(BTreeMap::new());
 
-    /// Monotonically increasing timer ID counter.
+    /// Monotonically increasing timer ID counter (starts at 1, never 0).
     static TIMER_ID_COUNTER: RefCell<u32> = RefCell::new(1);
 
-    /// Engine epoch: timestamp (ms) at which the first timer was created, used
-    /// to convert relative delays into absolute deadlines. We store Option so we
-    /// can lazy-init it on the first timer registration.
-    static ENGINE_START_MS: RefCell<Option<u64>> = RefCell::new(None);
-
-    /// Pending microtask functions (for Promise integration).
+    /// Pending userland microtask functions (queueMicrotask / polyfill Promise).
     static MICROTASK_QUEUE: RefCell<Vec<JsFunction>> = RefCell::new(Vec::new());
 }
 
-/// Returns milliseconds since some fixed epoch (wall clock).
+/// Returns milliseconds since the Unix epoch (wall clock).
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -50,18 +47,17 @@ fn now_ms() -> u64 {
 fn next_timer_id() -> u32 {
     TIMER_ID_COUNTER.with(|c| {
         let id = *c.borrow();
-        *c.borrow_mut() = id.wrapping_add(1).max(1); // never return 0
+        *c.borrow_mut() = id.wrapping_add(1).max(1);
         id
     })
 }
 
-/// Register a new timer. Returns its timer ID.
+/// Register a one-shot timeout. Returns the timer ID.
 pub fn set_timeout(func: JsFunction, args: Vec<JsValue>, delay_ms: u64) -> u32 {
     let id = next_timer_id();
     let deadline = now_ms() + delay_ms;
     PENDING_TIMERS.with(|m| {
-        m.borrow_mut().insert(id, TimerEntry {
-            deadline_ms: deadline,
+        m.borrow_mut().insert((deadline, id), TimerEntry {
             func,
             args,
             interval_ms: None,
@@ -70,13 +66,12 @@ pub fn set_timeout(func: JsFunction, args: Vec<JsValue>, delay_ms: u64) -> u32 {
     id
 }
 
-/// Register a repeating interval. Returns its timer ID.
+/// Register a repeating interval. Returns the timer ID.
 pub fn set_interval(func: JsFunction, args: Vec<JsValue>, interval_ms: u64) -> u32 {
     let id = next_timer_id();
     let deadline = now_ms() + interval_ms;
     PENDING_TIMERS.with(|m| {
-        m.borrow_mut().insert(id, TimerEntry {
-            deadline_ms: deadline,
+        m.borrow_mut().insert((deadline, id), TimerEntry {
             func,
             args,
             interval_ms: Some(interval_ms),
@@ -87,49 +82,54 @@ pub fn set_interval(func: JsFunction, args: Vec<JsValue>, interval_ms: u64) -> u
 
 /// Cancel a timer/interval by ID.
 pub fn clear_timer(id: u32) {
-    PENDING_TIMERS.with(|m| { m.borrow_mut().remove(&id); });
+    PENDING_TIMERS.with(|m| {
+        // The key includes deadline which we don't know; scan all entries.
+        let key = m.borrow().keys().find(|(_, tid)| *tid == id).cloned();
+        if let Some(k) = key {
+            m.borrow_mut().remove(&k);
+        }
+    });
 }
 
-/// Enqueue a JS function as a microtask (called from the Promise polyfill).
+/// Enqueue a JS function as a userland microtask.
 pub fn enqueue_microtask(func: JsFunction) {
     MICROTASK_QUEUE.with(|q| q.borrow_mut().push(func));
 }
 
-/// Check for expired timers and invoke their callbacks.
-/// Returns the number of callbacks that were fired this tick.
+/// Fire any timers whose deadline has passed.
+/// Also drains Boa's internal job queue (native Promise microtasks) after each callback.
+/// Returns the number of callbacks fired this tick.
 pub fn tick_timers(ctx: &mut Context) -> usize {
     let now = now_ms();
     let mut fired = 0;
 
-    // Collect expired timer IDs without holding the borrow while calling into Boa.
-    let expired: Vec<u32> = PENDING_TIMERS.with(|m| {
+    // Collect expired keys. The BTreeMap is ordered by (deadline, id), so
+    // we iterate in the correct FIFO order automatically.
+    let expired_keys: Vec<(u64, u32)> = PENDING_TIMERS.with(|m| {
         m.borrow()
-            .iter()
-            .filter(|(_, t)| t.deadline_ms <= now)
-            .map(|(id, _)| *id)
+            .range(..=(now, u32::MAX))
+            .map(|(k, _)| *k)
             .collect()
     });
 
-    for id in expired {
-        // Remove the entry (intervals will be re-inserted below).
-        let entry = PENDING_TIMERS.with(|m| m.borrow_mut().remove(&id));
+    for key in expired_keys {
+        let entry = PENDING_TIMERS.with(|m| m.borrow_mut().remove(&key));
         if let Some(entry) = entry {
-            // Invoke the callback.
             let args: Vec<JsValue> = entry.args.iter().cloned().collect();
             if let Err(e) = entry.func.call(&JsValue::undefined(), &args, ctx) {
-                warn!("[Timer id={id}] callback threw: {e}");
+                warn!("[Timer id={}] callback threw: {e}", key.1);
             }
+            // Flush Boa's internal Promise/microtask job queue after each callback.
+            ctx.run_jobs();
             fired += 1;
 
-            // Re-register if this was an interval.
+            // Re-register intervals.
             if let Some(interval_ms) = entry.interval_ms {
                 let new_deadline = now + interval_ms;
-                // Try to clone the function (JsFunction is Clone in Boa 0.20).
-                let new_func = entry.func.clone();
+                let func_clone = entry.func.clone();
                 PENDING_TIMERS.with(|m| {
-                    m.borrow_mut().insert(id, TimerEntry {
-                        deadline_ms: new_deadline,
-                        func: new_func,
+                    m.borrow_mut().insert((new_deadline, key.1), TimerEntry {
+                        func: func_clone,
                         args: entry.args,
                         interval_ms: Some(interval_ms),
                     });
@@ -141,26 +141,30 @@ pub fn tick_timers(ctx: &mut Context) -> usize {
     fired
 }
 
-/// Drain the microtask queue, invoking all pending microtask functions.
-/// Should be called after each macrotask (timer callback) to emulate
-/// the WHATWG microtask checkpoint.
+/// Drain the userland microtask queue (queueMicrotask / Promise polyfill callbacks).
+/// Also calls `ctx.run_jobs()` to flush Boa's native Promise internals.
+/// Loops until both queues are empty.
 pub fn drain_microtasks(ctx: &mut Context) -> usize {
     let mut count = 0;
     loop {
-        let funcs: Vec<JsFunction> = MICROTASK_QUEUE.with(|q| {
-            let mut v = q.borrow_mut();
-            let taken = v.drain(..).collect();
-            taken
-        });
+        // 1. Flush Boa's internal job queue (native Promise).
+        ctx.run_jobs();
+
+        // 2. Drain our userland microtask queue.
+        let funcs: Vec<JsFunction> = MICROTASK_QUEUE.with(|q| q.borrow_mut().drain(..).collect());
         if funcs.is_empty() { break; }
+
         for func in funcs {
             if let Err(e) = func.call(&JsValue::undefined(), &[], ctx) {
                 warn!("[Microtask] threw: {e}");
             }
             count += 1;
+            // Each callback might enqueue more microtasks — flush Boa's queue again.
+            ctx.run_jobs();
         }
-        // Loop: microtasks can enqueue more microtasks.
     }
+    // Final Boa job flush in case the loop exited with pending native jobs.
+    ctx.run_jobs();
     count
 }
 
@@ -171,9 +175,8 @@ pub fn has_pending_work() -> bool {
     timers || microtasks
 }
 
-/// Clear all pending timers (called when a page navigates away / engine resets).
+/// Clear all pending timers and microtasks (e.g. on page navigation).
 pub fn clear_all_timers() {
     PENDING_TIMERS.with(|m| m.borrow_mut().clear());
     MICROTASK_QUEUE.with(|q| q.borrow_mut().clear());
-    info!("All pending timers and microtasks cleared");
 }
