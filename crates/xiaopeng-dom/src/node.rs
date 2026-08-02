@@ -96,6 +96,9 @@ pub struct Node {
     pub children: Vec<NodePtr>,
     pub data: NodeData,
     pub listeners: HashMap<String, Vec<EventListenerEntry>>,
+    pub id_cache: Option<HashMap<String, WeakNodePtr>>,
+    pub tag_cache: Option<HashMap<String, Vec<WeakNodePtr>>>,
+    pub class_cache: Option<HashMap<String, Vec<WeakNodePtr>>>,
 }
 
 impl Node {
@@ -106,6 +109,9 @@ impl Node {
             children: Vec::new(),
             data,
             listeners: HashMap::new(),
+            id_cache: None,
+            tag_cache: None,
+            class_cache: None,
         }))
     }
 
@@ -118,6 +124,27 @@ impl Node {
         }
     }
 
+    pub fn invalidate_caches(node_ptr: &NodePtr) {
+        let mut current = Some(Arc::clone(node_ptr));
+        while let Some(n) = current {
+            let mut n_write = n.write().unwrap();
+            let was_dirty = n_write.id_cache.is_none() 
+                && n_write.tag_cache.is_none() 
+                && n_write.class_cache.is_none();
+                
+            n_write.id_cache = None;
+            n_write.tag_cache = None;
+            n_write.class_cache = None;
+            
+            if was_dirty {
+                break;
+            }
+            let parent = n_write.parent.as_ref().and_then(|w| w.upgrade());
+            drop(n_write);
+            current = parent;
+        }
+    }
+
     pub fn append_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) {
         debug!("Appending child to parent DOM Node");
         
@@ -125,12 +152,14 @@ impl Node {
         if let Some(old_parent_weak) = &child_ptr.read().unwrap().parent {
             if let Some(old_parent) = old_parent_weak.upgrade() {
                 old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+                Self::invalidate_caches(&old_parent);
             }
         }
 
         // Set new parent
         child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
         parent_ptr.write().unwrap().children.push(Arc::clone(child_ptr));
+        Self::invalidate_caches(parent_ptr);
     }
 
     pub fn insert_before(parent_ptr: &NodePtr, child_ptr: &NodePtr, index: usize) -> Result<(), &'static str> {
@@ -147,8 +176,9 @@ impl Node {
         // 2. Remove from old parent if exists.
         // We do this BEFORE acquiring parent_ptr's write lock to avoid deadlock if old_parent == parent_ptr
         let old_parent = child_ptr.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
-        if let Some(old_parent) = old_parent {
-            old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+        if let Some(ref old_p) = old_parent {
+            old_p.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+            Self::invalidate_caches(old_p);
         }
 
         // 3. Insert into the new parent.
@@ -159,6 +189,8 @@ impl Node {
         
         child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
         parent.children.insert(safe_index, Arc::clone(child_ptr));
+        drop(parent); // drop write lock before invalidating cache
+        Self::invalidate_caches(parent_ptr);
         
         Ok(())
     }
@@ -184,6 +216,8 @@ impl Node {
         if let Some(idx) = index {
             let removed = parent.children.remove(idx);
             removed.write().unwrap().parent = None;
+            drop(parent);
+            Self::invalidate_caches(parent_ptr);
             Some(removed)
         } else {
             None
@@ -258,8 +292,16 @@ impl Node {
         self.children.iter().filter(|c| c.read().unwrap().node_type() == NodeType::Element).count()
     }
 
+    /// Clones a node.
+    ///
+    /// Per the DOM specification:
+    /// - Event listeners are NOT cloned.
+    /// - The cloned node has no parent (`parent` is `None`) until it is appended to another node.
+    /// - If `deep` is true, all descendants are also cloned recursively.
     pub fn clone_node(node_ptr: &NodePtr, deep: bool) -> NodePtr {
         let node = node_ptr.read().unwrap();
+        // We clone the inner data, but intentionally do not clone listeners.
+        // Node::new will initialize `parent` to None and an empty listeners map.
         let cloned_data = node.data.clone();
         let new_node = Node::new(cloned_data);
         
@@ -273,75 +315,165 @@ impl Node {
     }
 
     pub fn to_html(node_ptr: &NodePtr) -> String {
+        Self::to_html_inner(node_ptr, None)
+    }
+
+    fn to_html_inner(node_ptr: &NodePtr, parent_tag: Option<&str>) -> String {
         let node = node_ptr.read().unwrap();
         match &node.data {
             NodeData::Document => {
-                node.children.iter().map(Self::to_html).collect::<Vec<_>>().join("")
+                node.children.iter().map(|c| Self::to_html_inner(c, None)).collect::<Vec<_>>().join("")
             }
             NodeData::Element(el) => {
                 let mut attrs = String::new();
                 for (k, v) in &el.attributes {
-                    attrs.push_str(&format!(" {}=\"{}\"", k, v));
+                    attrs.push_str(&format!(" {}=\"{}\"", k, Self::escape_html_attr(v)));
                 }
-                let children_html = node.children.iter().map(Self::to_html).collect::<Vec<_>>().join("");
-                format!("<{}{}>{}</{}>", el.tag_name, attrs, children_html, el.tag_name)
+                
+                let tag_lower = el.tag_name.to_lowercase();
+                if Self::is_void_element(&tag_lower) {
+                    format!("<{}{}>", el.tag_name, attrs)
+                } else {
+                    let children_html = node.children.iter().map(|c| Self::to_html_inner(c, Some(&tag_lower))).collect::<Vec<_>>().join("");
+                    format!("<{}{}>{}</{}>", el.tag_name, attrs, children_html, el.tag_name)
+                }
             }
-            NodeData::Text(t) => t.clone(),
+            NodeData::Text(t) => {
+                if let Some(tag) = parent_tag {
+                    if matches!(tag, "script" | "style" | "xmp" | "iframe" | "noembed" | "noframes" | "plaintext" | "noscript") {
+                        return t.clone();
+                    }
+                }
+                Self::escape_html_text(t)
+            }
             NodeData::Comment(c) => format!("<!--{}-->", c),
         }
     }
 
+    fn escape_html_text(text: &str) -> String {
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    }
+
+    fn escape_html_attr(attr: &str) -> String {
+        attr.replace("&", "&amp;")
+            .replace("\"", "&quot;")
+    }
+
+    fn is_void_element(tag: &str) -> bool {
+        matches!(
+            tag,
+            "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr"
+        )
+    }
+
     /// Recursively searches for an element with the given ID.
     pub fn get_element_by_id(node: &NodePtr, id: &str) -> Option<NodePtr> {
+        Self::ensure_id_cache(node);
         let n = node.read().unwrap();
-        if let NodeData::Element(ref el) = n.data {
-            if el.id().map(|s| s.as_str()) == Some(id) {
-                return Some(Arc::clone(node));
-            }
-        }
-        for child in &n.children {
-            if let Some(found) = Self::get_element_by_id(child, id) {
-                return Some(found);
+        if let Some(cache) = &n.id_cache {
+            if let Some(weak) = cache.get(id) {
+                return weak.upgrade();
             }
         }
         None
     }
 
-    /// Recursively collects all elements matching the given tag name.
-    pub fn get_elements_by_tag_name(node: &NodePtr, tag_name: &str) -> Vec<NodePtr> {
-        let mut results = Vec::new();
-        Self::collect_elements_by_tag_name(node, tag_name, &mut results);
-        results
+    fn ensure_id_cache(node: &NodePtr) {
+        let is_none = node.read().unwrap().id_cache.is_none();
+        if is_none {
+            let mut cache = HashMap::new();
+            Self::build_id_cache(node, &mut cache);
+            node.write().unwrap().id_cache = Some(cache);
+        }
     }
 
-    fn collect_elements_by_tag_name(node: &NodePtr, tag_name: &str, results: &mut Vec<NodePtr>) {
+    fn build_id_cache(node: &NodePtr, cache: &mut HashMap<String, WeakNodePtr>) {
         let n = node.read().unwrap();
         if let NodeData::Element(ref el) = n.data {
-            if el.tag_name == tag_name {
-                results.push(Arc::clone(node));
+            if let Some(id) = el.id() {
+                if !cache.contains_key(id) {
+                    cache.insert(id.clone(), Arc::downgrade(node));
+                }
             }
         }
         for child in &n.children {
-            Self::collect_elements_by_tag_name(child, tag_name, results);
+            Self::build_id_cache(child, cache);
+        }
+    }
+
+    /// Recursively collects all elements matching the given tag name.
+    pub fn get_elements_by_tag_name(node: &NodePtr, tag_name: &str) -> Vec<NodePtr> {
+        Self::ensure_tag_cache(node);
+        let n = node.read().unwrap();
+        let mut results = Vec::new();
+        if let Some(cache) = &n.tag_cache {
+            if let Some(weaks) = cache.get(tag_name) {
+                for weak in weaks {
+                    if let Some(ptr) = weak.upgrade() {
+                        results.push(ptr);
+                    }
+                }
+            }
+        }
+        results
+    }
+
+    fn ensure_tag_cache(node: &NodePtr) {
+        let is_none = node.read().unwrap().tag_cache.is_none();
+        if is_none {
+            let mut cache = HashMap::new();
+            Self::build_tag_cache(node, &mut cache);
+            node.write().unwrap().tag_cache = Some(cache);
+        }
+    }
+
+    fn build_tag_cache(node: &NodePtr, cache: &mut HashMap<String, Vec<WeakNodePtr>>) {
+        let n = node.read().unwrap();
+        if let NodeData::Element(ref el) = n.data {
+            cache.entry(el.tag_name.clone()).or_default().push(Arc::downgrade(node));
+        }
+        for child in &n.children {
+            Self::build_tag_cache(child, cache);
         }
     }
 
     /// Recursively collects all elements containing the given class name.
     pub fn get_elements_by_class_name(node: &NodePtr, class_name: &str) -> Vec<NodePtr> {
+        Self::ensure_class_cache(node);
+        let n = node.read().unwrap();
         let mut results = Vec::new();
-        Self::collect_elements_by_class_name(node, class_name, &mut results);
+        if let Some(cache) = &n.class_cache {
+            if let Some(weaks) = cache.get(class_name) {
+                for weak in weaks {
+                    if let Some(ptr) = weak.upgrade() {
+                        results.push(ptr);
+                    }
+                }
+            }
+        }
         results
     }
 
-    fn collect_elements_by_class_name(node: &NodePtr, class_name: &str, results: &mut Vec<NodePtr>) {
+    fn ensure_class_cache(node: &NodePtr) {
+        let is_none = node.read().unwrap().class_cache.is_none();
+        if is_none {
+            let mut cache = HashMap::new();
+            Self::build_class_cache(node, &mut cache);
+            node.write().unwrap().class_cache = Some(cache);
+        }
+    }
+
+    fn build_class_cache(node: &NodePtr, cache: &mut HashMap<String, Vec<WeakNodePtr>>) {
         let n = node.read().unwrap();
         if let NodeData::Element(ref el) = n.data {
-            if el.classes().contains(&class_name) {
-                results.push(Arc::clone(node));
+            for c in el.classes() {
+                cache.entry(c.to_string()).or_default().push(Arc::downgrade(node));
             }
         }
         for child in &n.children {
-            Self::collect_elements_by_class_name(child, class_name, results);
+            Self::build_class_cache(child, cache);
         }
     }
 

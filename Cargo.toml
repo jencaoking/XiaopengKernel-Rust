@@ -26,6 +26,19 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tokio = { version = "1.43", features = ["full"] }
 url = "2.5"
 boa_engine = { version = "0.20" }
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = "0.8"
+rustls-pemfile = "2"
+webpki-roots = "0.26"
+quinn = { version = "0.11", features = ["rustls"] }
+h3 = "0.0.6"
+h3-quinn = "0.0.7"
+bytes = "1"
+lru = "0.12"
 
 # Local workspace members
 xiaopeng-common = { path = "crates/xiaopeng-common" }

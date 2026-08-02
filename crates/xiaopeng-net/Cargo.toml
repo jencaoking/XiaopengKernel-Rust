@@ -9,3 +9,22 @@ xiaopeng-common.workspace = true
 tokio.workspace = true
 url.workspace = true
 tracing.workspace = true
+bytes.workspace = true
+lru.workspace = true
+
+# HTTP/1.1 + HTTP/2
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+
+# TLS (shared by H1, H2, H3)
+tokio-rustls.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+webpki-roots.workspace = true
+
+# HTTP/3 (QUIC)
+quinn.workspace = true
+h3.workspace = true
+h3-quinn.workspace = true

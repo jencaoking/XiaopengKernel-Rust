@@ -1,29 +1,250 @@
-//! XiaopengKernel Async Resource Loader & Network Module
+//! XiaopengKernel Network Module
+//!
+//! Provides a unified `fetch()` API that automatically negotiates the best
+//! available HTTP protocol:
+//!
+//! - **HTTP/3** if the server advertises QUIC via `Alt-Svc`.
+//! - **HTTP/2** for HTTPS connections where ALPN negotiates h2.
+//! - **HTTP/1.1** as universal fallback.
+//!
+//! All transports support TLS via `rustls` with system root certificates
+//! (falling back to Mozilla's webpki-roots bundle).
 
 pub mod cache;
+pub mod http1;
+pub mod http2;
+pub mod http3;
+pub mod request;
+pub mod tls;
 
 pub use cache::ResourceCache;
-use tracing::info;
-use url::Url;
+pub use request::{Headers, HttpVersion, Method, Request, Response};
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tracing::{info, warn};
 use xiaopeng_common::{XiaopengError, XiaopengResult};
 
-pub async fn load_resource(raw_url: &str) -> XiaopengResult<String> {
-    info!("Loading resource from URL: {}", raw_url);
-    let parsed_url = Url::parse(raw_url).map_err(|e| XiaopengError::NetworkError {
-        url: raw_url.to_string(),
-        message: format!("Invalid URL: {e}"),
-    })?;
+// ---------------------------------------------------------------------------
+// NetClient — stateful HTTP client with integrated LRU cache
+// ---------------------------------------------------------------------------
 
-    Ok(format!("Content loaded from {}", parsed_url))
+/// Protocol preference for a `NetClient` instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolHint {
+    /// Always use HTTP/1.1.
+    Http1,
+    /// Always use HTTP/2 (HTTPS only).
+    Http2,
+    /// Always use HTTP/3 (HTTPS only, QUIC).
+    Http3,
+    /// Automatically pick the best protocol (default).
+    Auto,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// A browser-style HTTP client that:
+/// - Caches responses with `Cache-Control: max-age`.
+/// - Respects `Alt-Svc` headers to upgrade to HTTP/3 on subsequent requests.
+/// - Supports redirect following (up to 10 hops).
+pub struct NetClient {
+    cache: Arc<Mutex<ResourceCache>>,
+    /// Hosts known to support HTTP/3 (populated from `Alt-Svc` headers).
+    h3_alt_svc: Arc<Mutex<std::collections::HashSet<String>>>,
+    protocol_hint: ProtocolHint,
+    max_redirects: usize,
+}
 
-    #[tokio::test]
-    async fn test_load_resource() {
-        let res = load_resource("https://example.com").await;
-        assert!(res.is_ok());
+impl NetClient {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(ResourceCache::new(256))),
+            h3_alt_svc: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            protocol_hint: ProtocolHint::Auto,
+            max_redirects: 10,
+        }
     }
+
+    pub fn with_protocol(mut self, hint: ProtocolHint) -> Self {
+        self.protocol_hint = hint;
+        self
+    }
+
+    pub fn with_max_redirects(mut self, n: usize) -> Self {
+        self.max_redirects = n;
+        self
+    }
+
+    /// Perform an HTTP request with caching, protocol negotiation, and redirect following.
+    pub async fn fetch(&self, req: Request) -> XiaopengResult<Response> {
+        let method_str = req.method.to_string();
+
+        // 1. Check cache (only for GET/HEAD).
+        if matches!(req.method, Method::Get | Method::Head) {
+            let mut cache = self.cache.lock().await;
+            if let Some(cached) = cache.get(&method_str, &req.url) {
+                info!("Cache HIT: {} {}", method_str, req.url);
+                return Ok(cached.response.clone());
+            }
+        }
+
+        // 2. Follow redirects.
+        let mut current_req = req.clone();
+        for hop in 0..=self.max_redirects {
+            let resp = self.send_one(&current_req).await?;
+
+            // Cache the response if it's a success.
+            if resp.ok() && matches!(current_req.method, Method::Get | Method::Head) {
+                let mut cache = self.cache.lock().await;
+                cache.insert(&method_str, &current_req.url, resp.clone());
+            }
+
+            // Learn about H3 support from Alt-Svc header.
+            if let Some(alt_svc) = resp.headers.get("alt-svc") {
+                if alt_svc.contains("h3") {
+                    if let Ok(url) = url::Url::parse(&current_req.url) {
+                        if let Some(host) = url.host_str() {
+                            self.h3_alt_svc.lock().await.insert(host.to_owned());
+                            info!("Registered H3 Alt-Svc for host: {host}");
+                        }
+                    }
+                }
+            }
+
+            // Handle redirects.
+            if resp.redirect() {
+                if hop == self.max_redirects {
+                    return Err(XiaopengError::NetworkError {
+                        url: current_req.url.clone(),
+                        message: format!("too many redirects (>{} hops)", self.max_redirects),
+                    });
+                }
+                let location = resp.headers.get("location").unwrap_or("").to_owned();
+                if location.is_empty() {
+                    return Err(XiaopengError::NetworkError {
+                        url: current_req.url.clone(),
+                        message: "redirect with no Location header".into(),
+                    });
+                }
+                info!("Redirect {} → {location}", resp.status);
+                // Resolve relative URLs.
+                let next_url = if location.starts_with("http") {
+                    location
+                } else {
+                    let base = url::Url::parse(&current_req.url)
+                        .map_err(|e| XiaopengError::NetworkError {
+                            url: current_req.url.clone(),
+                            message: format!("base URL parse: {e}"),
+                        })?;
+                    base.join(&location)
+                        .map_err(|e| XiaopengError::NetworkError {
+                            url: current_req.url.clone(),
+                            message: format!("resolve redirect: {e}"),
+                        })?
+                        .to_string()
+                };
+                // 301/302/303 → downgrade to GET.
+                let method = if [301, 302, 303].contains(&resp.status) {
+                    Method::Get
+                } else {
+                    current_req.method.clone()
+                };
+                current_req = Request {
+                    method,
+                    url: next_url,
+                    headers: current_req.headers.clone(),
+                    body: if resp.status == 303 { None } else { current_req.body.clone() },
+                };
+                continue;
+            }
+
+            return Ok(resp);
+        }
+
+        unreachable!()
+    }
+
+    /// Send a single request, choosing the transport layer automatically.
+    async fn send_one(&self, req: &Request) -> XiaopengResult<Response> {
+        let use_h3 = matches!(self.protocol_hint, ProtocolHint::Http3) || {
+            // Auto: use H3 if we've seen an Alt-Svc for this host.
+            if let Ok(url) = url::Url::parse(&req.url) {
+                if let Some(host) = url.host_str() {
+                    self.h3_alt_svc.lock().await.contains(host)
+                } else { false }
+            } else { false }
+        };
+
+        if use_h3 {
+            match http3::send(req).await {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    warn!("HTTP/3 failed ({e}), falling back to HTTP/2");
+                }
+            }
+        }
+
+        match self.protocol_hint {
+            ProtocolHint::Http1 => http1::send(req).await,
+            ProtocolHint::Http2 => http2::send(req).await,
+            ProtocolHint::Http3 => {
+                // Already tried H3 above and it failed. Try H2 as fallback.
+                match http2::send(req).await {
+                    Ok(r) => Ok(r),
+                    Err(_) => http1::send(req).await,
+                }
+            }
+            ProtocolHint::Auto => {
+                // For HTTPS, try H2 first; fall back to H1.
+                if req.url.starts_with("https://") {
+                    match http2::send(req).await {
+                        Ok(r) => Ok(r),
+                        Err(_) => http1::send(req).await,
+                    }
+                } else {
+                    http1::send(req).await
+                }
+            }
+        }
+    }
+
+    /// Invalidate the cache entry for a given method + URL.
+    pub async fn invalidate_cache(&self, method: &str, url: &str) {
+        self.cache.lock().await.invalidate(method, url);
+    }
+
+    /// Clear the entire cache.
+    pub async fn clear_cache(&self) {
+        self.cache.lock().await.clear();
+    }
+}
+
+impl Default for NetClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Convenience top-level `fetch()` function (uses a one-shot client)
+// ---------------------------------------------------------------------------
+
+/// Fetch a URL, automatically negotiating the best available HTTP protocol.
+/// Creates a transient `NetClient` (no shared cache). For persistent
+/// connections and caching, use `NetClient` directly.
+pub async fn fetch(url: &str) -> XiaopengResult<Response> {
+    NetClient::new()
+        .fetch(Request::get(url))
+        .await
+}
+
+/// Legacy compatibility alias (returns response body as String).
+pub async fn load_resource(raw_url: &str) -> XiaopengResult<String> {
+    let resp = fetch(raw_url).await?;
+    if !resp.ok() {
+        return Err(XiaopengError::NetworkError {
+            url: raw_url.to_string(),
+            message: format!("HTTP error {}", resp.status),
+        });
+    }
+    Ok(resp.body_text().into_owned())
 }
