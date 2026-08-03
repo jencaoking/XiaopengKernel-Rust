@@ -14,8 +14,8 @@ async fn main() -> XiaopengResult<()> {
         title: "XiaopengKernel Rust Demo".into(),
         width: 800,
         height: 600,
-        headless: true,
-        headless_output: Some("snapshot.png".to_string()),
+        headless: false,
+        headless_output: None,
     };
 
     let mut engine = BrowserEngine::new(config);

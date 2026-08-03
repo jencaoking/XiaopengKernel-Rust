@@ -4373,6 +4373,7 @@ dependencies = [
 name = "xiaopeng-engine"
 version = "0.4.0"
 dependencies = [
+ "pollster 1.0.1",
  "tokio",
  "tracing",
  "winit",
@@ -4441,6 +4442,7 @@ dependencies = [
  "tiny-skia 0.12.0",
  "tracing",
  "wgpu",
+ "winit",
  "xiaopeng-common",
  "xiaopeng-layout",
  "xiaopeng-style",

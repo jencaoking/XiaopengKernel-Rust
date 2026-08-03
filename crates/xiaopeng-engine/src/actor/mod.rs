@@ -40,7 +40,7 @@ pub struct EngineActors {
 }
 
 impl EngineActors {
-    pub fn spawn(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> Self {
+    pub fn spawn(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> (Self, Option<UnboundedReceiver<RenderMsg>>) {
         let (script_tx, script_rx) = unbounded_channel();
         let (layout_tx, layout_rx) = unbounded_channel();
         let (render_tx, render_rx) = unbounded_channel();
@@ -61,11 +61,16 @@ impl EngineActors {
             Self::layout_loop(layout_rx, render_tx_clone);
         });
 
-        // Spawn Render Thread
-        let config_clone = config.clone();
-        std::thread::spawn(move || {
-            Self::render_loop(render_rx, config_clone);
-        });
+        // Spawn Render Thread only if headless
+        let mut ui_render_rx = None;
+        if config.headless {
+            let config_clone = config.clone();
+            std::thread::spawn(move || {
+                Self::render_loop(render_rx, config_clone);
+            });
+        } else {
+            ui_render_rx = Some(render_rx);
+        }
 
         // Spawn Script Thread (Runs within a Tokio local set or block_on)
         let layout_tx_clone = layout_tx.clone();
@@ -81,11 +86,11 @@ impl EngineActors {
             });
         });
 
-        Self {
+        (Self {
             script_tx,
             layout_tx,
             render_tx,
-        }
+        }, ui_render_rx)
     }
 
     async fn script_loop(

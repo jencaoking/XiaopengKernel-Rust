@@ -20,3 +20,4 @@ xiaopeng-script.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 winit.workspace = true
+pollster = "1.0.1"

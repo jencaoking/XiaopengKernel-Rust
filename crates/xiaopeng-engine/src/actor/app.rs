@@ -11,14 +11,21 @@ pub struct ConstellationApp {
     pub config: crate::EngineConfig,
     pub actors: EngineActors,
     pub window: Option<Arc<Window>>,
+    pub render_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::RenderMsg>>,
+    pub renderer: Option<xiaopeng_renderer::WgpuRenderer>,
+    pub latest_display_list: Option<xiaopeng_renderer::DisplayList>,
 }
 
 impl ConstellationApp {
     pub fn new(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> Self {
+        let (actors, render_rx) = EngineActors::spawn(config.clone(), initial_doc);
         Self {
-            actors: EngineActors::spawn(config.clone(), initial_doc),
+            actors,
             config,
             window: None,
+            render_rx,
+            renderer: None,
+            latest_display_list: None,
         }
     }
 }
@@ -40,7 +47,18 @@ impl ApplicationHandler for ConstellationApp {
         match event_loop.create_window(window_attributes) {
             Ok(window) => {
                 info!("Constellation: UI Window created successfully");
-                self.window = Some(Arc::new(window));
+                let window = Arc::new(window);
+                self.window = Some(window.clone());
+                
+                // Initialize WgpuRenderer
+                if let Ok(renderer) = pollster::block_on(xiaopeng_renderer::WgpuRenderer::new(window.clone())) {
+                    info!("Constellation: WgpuRenderer initialized successfully");
+                    self.renderer = Some(renderer);
+                } else {
+                    warn!("Constellation: Failed to initialize WgpuRenderer");
+                }
+                
+                window.request_redraw();
             }
             Err(e) => {
                 warn!("Constellation: Failed to create window: {:?}", e);
@@ -62,6 +80,30 @@ impl ApplicationHandler for ConstellationApp {
             WindowEvent::Resized(size) => {
                 info!("Constellation: Resized to {}x{}", size.width, size.height);
                 let _ = self.actors.script_tx.send(ScriptMsg::Resize(size.width, size.height));
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                // Check if a new DisplayList has arrived
+                if let Some(rx) = &mut self.render_rx {
+                    while let Ok(msg) = rx.try_recv() {
+                        let super::RenderMsg::Render(dl) = msg;
+                        self.latest_display_list = Some(dl);
+                    }
+                }
+                
+                // Render the latest display list
+                if let (Some(renderer), Some(dl)) = (&mut self.renderer, &self.latest_display_list) {
+                    if let Err(e) = renderer.render(dl) {
+                        warn!("Constellation: Render error: {}", e);
+                    }
+                }
+                
+                // Continue animation loop
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
             }
             // other events can be forwarded here...
             _ => (),

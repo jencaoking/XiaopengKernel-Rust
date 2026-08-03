@@ -14,6 +14,7 @@ pollster = "1.0.1"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 rustybuzz = "0.20.1"
 swash = "0.2.10"
+winit.workspace = true
 
 [dev-dependencies]
 xiaopeng-style.workspace = true

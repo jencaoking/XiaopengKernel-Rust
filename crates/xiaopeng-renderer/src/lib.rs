@@ -6,6 +6,7 @@ pub mod display_list;
 
 pub use canvas::BitmapCanvas;
 pub use canvas::gpu::{GpuCanvas, render_display_list_gpu};
+pub use canvas::wgpu_renderer::WgpuRenderer;
 pub use display_list::{DisplayList, DisplayCommand};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
