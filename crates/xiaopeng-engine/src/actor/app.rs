@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
-use winit::event::{WindowEvent, ElementState, MouseButton};
+use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 use tracing::{info, warn};
@@ -13,9 +13,9 @@ pub struct ConstellationApp {
 }
 
 impl ConstellationApp {
-    pub fn new(config: crate::EngineConfig) -> Self {
+    pub fn new(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> Self {
         Self {
-            actors: EngineActors::spawn(config),
+            actors: EngineActors::spawn(config, initial_doc),
             window: None,
         }
     }

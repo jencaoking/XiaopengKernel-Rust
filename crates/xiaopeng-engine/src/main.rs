@@ -14,7 +14,8 @@ async fn main() -> XiaopengResult<()> {
         title: "XiaopengKernel Rust Demo".into(),
         width: 800,
         height: 600,
-        ..Default::default()
+        headless: true,
+        headless_output: Some("snapshot.png".to_string()),
     };
 
     let mut engine = BrowserEngine::new(config);
@@ -31,5 +32,8 @@ async fn main() -> XiaopengResult<()> {
     )?;
 
     info!("🎉 Engine startup sequence completed successfully!");
+    // Run in multi-threaded actor mode
+    engine.run_actors()?;
+
     Ok(())
 }

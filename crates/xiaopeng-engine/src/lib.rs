@@ -57,7 +57,7 @@ impl BrowserEngine {
             }
         })?;
         
-        let mut app = actor::ConstellationApp::new(self.config);
+        let mut app = actor::ConstellationApp::new(self.config, self.context.document.take());
         
         // We can send initial messages if we already loaded HTML (but actors parse HTML themselves!)
         // So in Actor mode, we'd rather pass the URL to the constellation before running.

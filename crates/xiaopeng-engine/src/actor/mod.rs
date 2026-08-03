@@ -1,5 +1,5 @@
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tracing::{info, warn};
+use tracing::info;
 use std::sync::Arc;
 
 pub mod app;
@@ -40,10 +40,20 @@ pub struct EngineActors {
 }
 
 impl EngineActors {
-    pub fn spawn(config: crate::EngineConfig) -> Self {
+    pub fn spawn(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> Self {
         let (script_tx, script_rx) = unbounded_channel();
         let (layout_tx, layout_rx) = unbounded_channel();
         let (render_tx, render_rx) = unbounded_channel();
+
+        // If we already have a parsed document from the single-threaded pre-load, kickstart the pipeline
+        if let Some(doc) = initial_doc {
+            info!("Constellation: Kickstarting actor pipeline with pre-loaded Document");
+            let _ = layout_tx.send(LayoutMsg::Compute {
+                root: doc.root,
+                width: config.width as f32,
+                height: config.height as f32,
+            });
+        }
 
         // Spawn Layout Thread
         let render_tx_clone = render_tx.clone();
