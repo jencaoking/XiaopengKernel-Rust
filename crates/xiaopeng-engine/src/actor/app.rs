@@ -8,6 +8,7 @@ use tracing::{info, warn};
 use super::{EngineActors, ScriptMsg};
 
 pub struct ConstellationApp {
+    pub config: crate::EngineConfig,
     pub actors: EngineActors,
     pub window: Option<Arc<Window>>,
 }
@@ -15,7 +16,8 @@ pub struct ConstellationApp {
 impl ConstellationApp {
     pub fn new(config: crate::EngineConfig, initial_doc: Option<xiaopeng_dom::Document>) -> Self {
         Self {
-            actors: EngineActors::spawn(config, initial_doc),
+            actors: EngineActors::spawn(config.clone(), initial_doc),
+            config,
             window: None,
         }
     }
@@ -23,6 +25,14 @@ impl ConstellationApp {
 
 impl ApplicationHandler for ConstellationApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.config.headless {
+            info!("Constellation: Headless mode, running actors and waiting for export...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            info!("Constellation: Exiting event loop.");
+            event_loop.exit();
+            return;
+        }
+
         let window_attributes = Window::default_attributes()
             .with_title("XiaopengKernel (Actor Mode)")
             .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0));
