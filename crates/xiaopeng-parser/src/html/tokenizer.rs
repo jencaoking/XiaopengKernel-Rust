@@ -698,27 +698,305 @@ impl HtmlTokenizer {
                         }
                     }
                 }
-                TokenizerState::AfterDoctypePublicKeyword |
-                TokenizerState::BeforeDoctypePublicIdentifier |
-                TokenizerState::DoctypePublicIdentifierDoubleQuoted |
-                TokenizerState::DoctypePublicIdentifierSingleQuoted |
-                TokenizerState::AfterDoctypePublicIdentifier |
-                TokenizerState::BetweenDoctypePublicAndSystemIdentifiers |
-                TokenizerState::AfterDoctypeSystemKeyword |
-                TokenizerState::BeforeDoctypeSystemIdentifier |
-                TokenizerState::DoctypeSystemIdentifierDoubleQuoted |
-                TokenizerState::DoctypeSystemIdentifierSingleQuoted |
-                TokenizerState::AfterDoctypeSystemIdentifier |
+                TokenizerState::AfterDoctypePublicKeyword => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeDoctypePublicIdentifier,
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut public_id, .. }) = self.current_token {
+                                *public_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypePublicIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut public_id, .. }) = self.current_token {
+                                *public_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypePublicIdentifierSingleQuoted;
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::BeforeDoctypePublicIdentifier => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut public_id, .. }) = self.current_token {
+                                *public_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypePublicIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut public_id, .. }) = self.current_token {
+                                *public_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypePublicIdentifierSingleQuoted;
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::DoctypePublicIdentifierDoubleQuoted => {
+                    match ch {
+                        '"' => self.state = TokenizerState::AfterDoctypePublicIdentifier,
+                        '\0' => {
+                            if let Some(HtmlToken::Doctype { public_id: Some(ref mut p), .. }) = self.current_token {
+                                p.push('\u{FFFD}');
+                            }
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { public_id: Some(ref mut p), .. }) = self.current_token {
+                                p.push(ch);
+                            }
+                        }
+                    }
+                }
+                TokenizerState::DoctypePublicIdentifierSingleQuoted => {
+                    match ch {
+                        '\'' => self.state = TokenizerState::AfterDoctypePublicIdentifier,
+                        '\0' => {
+                            if let Some(HtmlToken::Doctype { public_id: Some(ref mut p), .. }) = self.current_token {
+                                p.push('\u{FFFD}');
+                            }
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { public_id: Some(ref mut p), .. }) = self.current_token {
+                                p.push(ch);
+                            }
+                        }
+                    }
+                }
+                TokenizerState::AfterDoctypePublicIdentifier => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BetweenDoctypePublicAndSystemIdentifiers,
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierSingleQuoted;
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::BetweenDoctypePublicAndSystemIdentifiers => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierSingleQuoted;
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::AfterDoctypeSystemKeyword => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeDoctypeSystemIdentifier,
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierSingleQuoted;
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::BeforeDoctypeSystemIdentifier => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '"' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierDoubleQuoted;
+                        }
+                        '\'' => {
+                            if let Some(HtmlToken::Doctype { ref mut system_id, .. }) = self.current_token {
+                                *system_id = Some(String::new());
+                            }
+                            self.state = TokenizerState::DoctypeSystemIdentifierSingleQuoted;
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
+                TokenizerState::DoctypeSystemIdentifierDoubleQuoted => {
+                    match ch {
+                        '"' => self.state = TokenizerState::AfterDoctypeSystemIdentifier,
+                        '\0' => {
+                            if let Some(HtmlToken::Doctype { system_id: Some(ref mut s), .. }) = self.current_token {
+                                s.push('\u{FFFD}');
+                            }
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { system_id: Some(ref mut s), .. }) = self.current_token {
+                                s.push(ch);
+                            }
+                        }
+                    }
+                }
+                TokenizerState::DoctypeSystemIdentifierSingleQuoted => {
+                    match ch {
+                        '\'' => self.state = TokenizerState::AfterDoctypeSystemIdentifier,
+                        '\0' => {
+                            if let Some(HtmlToken::Doctype { system_id: Some(ref mut s), .. }) = self.current_token {
+                                s.push('\u{FFFD}');
+                            }
+                        }
+                        '>' => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            if let Some(HtmlToken::Doctype { system_id: Some(ref mut s), .. }) = self.current_token {
+                                s.push(ch);
+                            }
+                        }
+                    }
+                }
+                TokenizerState::AfterDoctypeSystemIdentifier => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token { *force_quirks = true; }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            self.reconsume_in(TokenizerState::BogusDoctype);
+                        }
+                    }
+                }
                 TokenizerState::BogusDoctype => {
-                    // For now, fold all these extended DOCTYPE states into BogusDoctype behavior
-                    // which just consumes until '>' to avoid getting stuck or emitting parse errors prematurely.
                     match ch {
                         '>' => {
                             self.state = TokenizerState::Data;
                             return Ok(self.emit_current_token());
                         }
+                        '\0' => {}
                         _ if eof => return Ok(self.emit_current_token()),
-                        _ => self.state = TokenizerState::BogusDoctype,
+                        _ => {}
                     }
                 }
                 TokenizerState::Rcdata => {
