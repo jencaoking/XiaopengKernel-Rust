@@ -96,8 +96,21 @@ impl BitmapCanvas {
                     let mut glyph_pixmap = Pixmap::new(img.placement.width, img.placement.height).unwrap();
                     let pixels = glyph_pixmap.pixels_mut();
                     
-                    // Simple assume 1-byte mask from ColorOutline(0) if len matches width*height
+                    // Use SIMD accelerated blending if available
                     if img.data.len() == (img.placement.width * img.placement.height) as usize {
+                        #[cfg(target_arch = "x86_64")]
+                        if std::is_x86_feature_detected!("avx2") {
+                            unsafe {
+                                crate::canvas::simd::blend_text_mask_avx2(&img.data, pixels, &color);
+                            }
+                        } else {
+                            for (i, &alpha) in img.data.iter().enumerate() {
+                                let a = ((alpha as u16 * color.a as u16) / 255) as u8;
+                                let c = tiny_skia::ColorU8::from_rgba(color.r, color.g, color.b, a);
+                                pixels[i] = c.premultiply();
+                            }
+                        }
+                        #[cfg(not(target_arch = "x86_64"))]
                         for (i, &alpha) in img.data.iter().enumerate() {
                             let a = ((alpha as u16 * color.a as u16) / 255) as u8;
                             let c = tiny_skia::ColorU8::from_rgba(color.r, color.g, color.b, a);
