@@ -74,18 +74,17 @@ pub fn resolve_style(node: &NodePtr) -> ComputedStyle {
     }
 
     // --- 2. Parse inline style="" attribute ---
-    let inline_css = el.attributes.get("style").map(|s| s.to_string());
+    let inline_css = el.attributes.get_named_item("style").map(|a| a.value.clone());
     drop(n); // release read lock before calling parser
 
     if let Some(css_text) = inline_css {
         // Wrap in a dummy selector rule to reuse existing declaration parser
         let wrapped = format!("__inline__ {{ {} }}", css_text);
-        if let Ok(sheet) = parser::parse_css(&wrapped) {
-            if let Some(rule) = sheet.rules.first() {
-                let resolver = StyleResolver::new(&sheet);
-                for decl in &rule.declarations {
-                    resolver.apply_declaration_pub(&mut style, decl);
-                }
+        let sheet = parser::CssParser::new(&wrapped).parse();
+        if let Some(rule) = sheet.rules.first() {
+            let resolver = StyleResolver::new(&sheet);
+            for decl in &rule.declarations {
+                resolver.apply_declaration_pub(&mut style, decl);
             }
         }
     }
