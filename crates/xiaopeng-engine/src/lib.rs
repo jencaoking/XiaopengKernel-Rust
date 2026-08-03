@@ -3,10 +3,12 @@
 pub mod browsing_context;
 pub mod event_loop;
 pub mod window;
+pub mod actor;
 
 pub use browsing_context::BrowsingContext;
 pub use event_loop::EventLoop;
 pub use window::BrowserApp;
+pub use actor::{EngineActors, ScriptMsg};
 use tracing::{info, instrument, warn};
 use xiaopeng_common::XiaopengResult;
 use xiaopeng_script::JsRuntime;
@@ -41,6 +43,29 @@ impl BrowserEngine {
             xiaopeng_common::XiaopengError::RenderError {
                 backend: "winit".to_string(),
                 message: format!("Event loop run_app failed: {}", e),
+            }
+        })?;
+        Ok(())
+    }
+
+    pub fn run_actors(self) -> XiaopengResult<()> {
+        info!("Starting Browser in Multi-Threaded Actor (Constellation) mode");
+        let event_loop = winit::event_loop::EventLoop::new().map_err(|e| {
+            xiaopeng_common::XiaopengError::RenderError {
+                backend: "winit".to_string(),
+                message: format!("Failed to create EventLoop: {}", e),
+            }
+        })?;
+        
+        let mut app = actor::ConstellationApp::new(self.config);
+        
+        // We can send initial messages if we already loaded HTML (but actors parse HTML themselves!)
+        // So in Actor mode, we'd rather pass the URL to the constellation before running.
+        
+        event_loop.run_app(&mut app).map_err(|e| {
+            xiaopeng_common::XiaopengError::RenderError {
+                backend: "winit".to_string(),
+                message: format!("Constellation run_app failed: {}", e),
             }
         })?;
         Ok(())
