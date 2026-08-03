@@ -489,7 +489,7 @@ impl HtmlTokenizer {
                                     system_id: None,
                                     force_quirks: false,
                                 });
-                                self.state = TokenizerState::BeforeDoctypeName;
+                                self.state = TokenizerState::Doctype;
                             } else {
                                 self.current_token = Some(HtmlToken::Comment(String::new()));
                                 self.reconsume_in(TokenizerState::BogusComment);
@@ -608,13 +608,17 @@ impl HtmlTokenizer {
                     }
                 }
                 TokenizerState::Doctype => {
-                    self.current_token = Some(HtmlToken::Doctype {
-                        name: None,
-                        public_id: None,
-                        system_id: None,
-                        force_quirks: false,
-                    });
-                    self.state = TokenizerState::BeforeDoctypeName;
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => self.state = TokenizerState::BeforeDoctypeName,
+                        '>' => self.reconsume_in(TokenizerState::BeforeDoctypeName),
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                *force_quirks = true;
+                            }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => self.reconsume_in(TokenizerState::BeforeDoctypeName),
+                    }
                 }
                 TokenizerState::BeforeDoctypeName => {
                     match ch {
@@ -660,7 +664,54 @@ impl HtmlTokenizer {
                         }
                     }
                 }
-                TokenizerState::AfterDoctypeName | TokenizerState::BogusDoctype => {
+                TokenizerState::AfterDoctypeName => {
+                    match ch {
+                        '\t' | '\n' | '\x0C' | ' ' => {}
+                        '>' => {
+                            self.state = TokenizerState::Data;
+                            return Ok(self.emit_current_token());
+                        }
+                        _ if eof => {
+                            if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                *force_quirks = true;
+                            }
+                            return Ok(self.emit_current_token());
+                        }
+                        _ => {
+                            let mut s = String::new();
+                            s.push(ch);
+                            for c in self.buffer.iter().take(5) {
+                                s.push(*c);
+                            }
+                            if s.eq_ignore_ascii_case("PUBLIC") && s.len() == 6 {
+                                for _ in 0..5 { self.consume_next().unwrap(); }
+                                self.state = TokenizerState::AfterDoctypePublicKeyword;
+                            } else if s.eq_ignore_ascii_case("SYSTEM") && s.len() == 6 {
+                                for _ in 0..5 { self.consume_next().unwrap(); }
+                                self.state = TokenizerState::AfterDoctypeSystemKeyword;
+                            } else {
+                                if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
+                                    *force_quirks = true;
+                                }
+                                self.state = TokenizerState::BogusDoctype;
+                            }
+                        }
+                    }
+                }
+                TokenizerState::AfterDoctypePublicKeyword |
+                TokenizerState::BeforeDoctypePublicIdentifier |
+                TokenizerState::DoctypePublicIdentifierDoubleQuoted |
+                TokenizerState::DoctypePublicIdentifierSingleQuoted |
+                TokenizerState::AfterDoctypePublicIdentifier |
+                TokenizerState::BetweenDoctypePublicAndSystemIdentifiers |
+                TokenizerState::AfterDoctypeSystemKeyword |
+                TokenizerState::BeforeDoctypeSystemIdentifier |
+                TokenizerState::DoctypeSystemIdentifierDoubleQuoted |
+                TokenizerState::DoctypeSystemIdentifierSingleQuoted |
+                TokenizerState::AfterDoctypeSystemIdentifier |
+                TokenizerState::BogusDoctype => {
+                    // For now, fold all these extended DOCTYPE states into BogusDoctype behavior
+                    // which just consumes until '>' to avoid getting stuck or emitting parse errors prematurely.
                     match ch {
                         '>' => {
                             self.state = TokenizerState::Data;

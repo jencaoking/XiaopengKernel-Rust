@@ -48,7 +48,7 @@ impl BrowserEngine {
         Ok(())
     }
 
-    pub fn run_actors(self) -> XiaopengResult<()> {
+    pub fn run_actors(mut self) -> XiaopengResult<()> {
         info!("Starting Browser in Multi-Threaded Actor (Constellation) mode");
         let event_loop = winit::event_loop::EventLoop::new().map_err(|e| {
             xiaopeng_common::XiaopengError::RenderError {
