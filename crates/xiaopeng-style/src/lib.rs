@@ -5,11 +5,13 @@ pub mod parser;
 pub mod resolver;
 pub mod selector;
 pub mod styled_node;
+pub mod query;
 
 pub use computed_style::{ComputedStyle, Display};
 pub use styled_node::StyledNode;
 pub use resolver::StyleResolver;
 pub use selector::{Selector, SimpleSelector, Specificity};
+pub use query::{query_selector, query_selector_all};
 use tracing::info;
 use xiaopeng_common::XiaopengResult;
 

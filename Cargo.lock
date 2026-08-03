@@ -4455,6 +4455,7 @@ dependencies = [
  "tracing",
  "xiaopeng-common",
  "xiaopeng-dom",
+ "xiaopeng-style",
 ]
 
 [[package]]

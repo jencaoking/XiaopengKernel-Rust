@@ -99,7 +99,7 @@ impl<'a> CssParser<'a> {
         })
     }
 
-    fn parse_selectors(&mut self) -> Vec<Selector> {
+    pub fn parse_selectors(&mut self) -> Vec<Selector> {
         let mut selectors = Vec::new();
         loop {
             self.consume_whitespace();

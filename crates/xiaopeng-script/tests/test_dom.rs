@@ -109,3 +109,45 @@ fn test_event_bubbling() {
     let res = runtime.eval(script).unwrap();
     assert_eq!(res, "true");
 }
+
+#[test]
+fn test_dom_query_selector() {
+    let mut runtime = JsRuntime::new().unwrap();
+    let root = Node::new(NodeData::Document);
+    let root_id = expose_node(root);
+    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+
+    let script = r##"
+        var parent = document.createElement("div");
+        parent.id = "container";
+        parent.className = "box wrapper";
+        
+        var child1 = document.createElement("span");
+        child1.className = "text highlight";
+        parent.appendChild(child1);
+        
+        var child2 = document.createElement("p");
+        child2.className = "text";
+        parent.appendChild(child2);
+        
+        document.appendChild(parent);
+        
+        var foundById = document.querySelector("#container");
+        var foundByClass = document.querySelector(".highlight");
+        var foundByTag = document.querySelector("p");
+        
+        var allText = document.querySelectorAll(".text");
+        var allSpans = document.querySelectorAll("span");
+        
+        foundById.__id === parent.__id && 
+        foundByClass.__id === child1.__id && 
+        foundByTag.__id === child2.__id && 
+        allText.length === 2 && 
+        allSpans.length === 1 &&
+        allText[0].__id === child1.__id &&
+        allText[1].__id === child2.__id
+    "##;
+
+    let res = runtime.eval(script).unwrap();
+    assert_eq!(res, "true");
+}

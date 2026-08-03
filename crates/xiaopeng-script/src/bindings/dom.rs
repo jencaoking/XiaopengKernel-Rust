@@ -56,15 +56,7 @@ fn dom_query_selector(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
     let selector = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(parent) = get_node(parent_id) {
-        // Simple selector support: "#id", ".class", or "tag"
-        let found = if let Some(id_val) = selector.strip_prefix('#') {
-            Node::get_element_by_id(&parent, id_val)
-        } else if let Some(cls) = selector.strip_prefix('.') {
-            Node::get_elements_by_class_name(&parent, cls).into_iter().next()
-        } else {
-            Node::get_elements_by_tag_name(&parent, &selector).into_iter().next()
-        };
-        if let Some(node) = found {
+        if let Some(node) = xiaopeng_style::query_selector(&parent, &selector) {
             let id = expose_node(node);
             return Ok(JsValue::from(id as f64));
         }
@@ -77,13 +69,7 @@ fn dom_query_selector_all(_this: &JsValue, args: &[JsValue], ctx: &mut Context) 
     let selector = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(parent) = get_node(parent_id) {
-        let nodes: Vec<NodePtr> = if let Some(id_val) = selector.strip_prefix('#') {
-            Node::get_element_by_id(&parent, id_val).into_iter().collect()
-        } else if let Some(cls) = selector.strip_prefix('.') {
-            Node::get_elements_by_class_name(&parent, cls)
-        } else {
-            Node::get_elements_by_tag_name(&parent, &selector)
-        };
+        let nodes = xiaopeng_style::query_selector_all(&parent, &selector);
 
         // Return the IDs as a JS array
         let ids: Vec<JsValue> = nodes.into_iter().map(|n| {
