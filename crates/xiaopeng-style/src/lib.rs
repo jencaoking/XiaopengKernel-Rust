@@ -22,10 +22,20 @@ pub fn init_style() -> XiaopengResult<()> {
     Ok(())
 }
 
-pub fn resolve_style(node: &NodePtr) -> ComputedStyle {
+pub fn resolve_style(
+    node: &NodePtr,
+    parent_style: Option<&ComputedStyle>,
+    root_font_size: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> ComputedStyle {
     use computed_style::{CssLength, Display};
 
     let mut style = ComputedStyle::default();
+    if let Some(parent) = parent_style {
+        style.color = parent.color;
+        style.font_size = parent.font_size;
+    }
 
     let n = node.read().unwrap();
     let el = match &n.data {
@@ -91,6 +101,7 @@ pub fn resolve_style(node: &NodePtr) -> ComputedStyle {
         }
     }
 
+    style.resolve_relative_units(style.font_size, root_font_size, viewport_width, viewport_height);
     style
 }
 

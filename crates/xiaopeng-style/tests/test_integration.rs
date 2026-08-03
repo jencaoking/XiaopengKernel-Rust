@@ -47,20 +47,20 @@ fn test_end_to_end_pipeline() {
     let p_node = &p_nodes[0];
 
     // Check Container Style (Class selector)
-    let container_style = resolver.resolve_style(&container_node);
+    let container_style = resolver.resolve_style(&container_node, None, 16.0, 800.0, 600.0);
     assert_eq!(container_style.width, xiaopeng_style::computed_style::CssLength::Px(500.0));
     assert_eq!(container_style.height, xiaopeng_style::computed_style::CssLength::Px(300.0));
 
     // Check P Style (Descendant selector & Class selector)
-    let p_style = resolver.resolve_style(p_node);
+    let p_style = resolver.resolve_style(p_node, None, 16.0, 800.0, 600.0);
     assert_eq!(p_style.color, Color { r: 0, g: 0, b: 255, a: 255 }); // Blue from 'div p'
 
     // Check Special Style (ID selector trumps all)
-    let special_style = resolver.resolve_style(&special_node);
+    let special_style = resolver.resolve_style(&special_node, None, 16.0, 800.0, 600.0);
     assert_eq!(special_style.color, Color { r: 255, g: 0, b: 0, a: 255 }); // Red from '#special'
 
     // 5. Build StyledTree and verify display: none is omitted
-    let styled_tree = xiaopeng_style::StyledNode::build(&root, &resolver).expect("Root should not be display: none");
+    let styled_tree = xiaopeng_style::StyledNode::build(&root, &resolver, None, 16.0, 800.0, 600.0).expect("Root should not be display: none");
     // Find container in the styled tree robustly
     fn find_styled_node<'a>(node: &'a xiaopeng_style::StyledNode, id: &str) -> Option<&'a xiaopeng_style::StyledNode> {
         let n = node.node.read().unwrap();

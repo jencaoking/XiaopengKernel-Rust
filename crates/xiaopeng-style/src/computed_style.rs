@@ -124,3 +124,39 @@ impl Default for ComputedStyle {
         }
     }
 }
+
+impl ComputedStyle {
+    pub fn resolve_relative_units(&mut self, current_font_size: f32, root_font_size: f32, viewport_width: f32, viewport_height: f32) {
+        let resolve = |length: &mut CssLength| {
+            match *length {
+                CssLength::Em(v) => *length = CssLength::Px(v * current_font_size),
+                CssLength::Rem(v) => *length = CssLength::Px(v * root_font_size),
+                CssLength::Vw(v) => *length = CssLength::Px(v * viewport_width / 100.0),
+                CssLength::Vh(v) => *length = CssLength::Px(v * viewport_height / 100.0),
+                _ => {}
+            }
+        };
+
+        resolve(&mut self.width);
+        resolve(&mut self.height);
+        resolve(&mut self.top);
+        resolve(&mut self.left);
+        resolve(&mut self.right);
+        resolve(&mut self.bottom);
+        
+        resolve(&mut self.margin_top);
+        resolve(&mut self.margin_bottom);
+        resolve(&mut self.margin_left);
+        resolve(&mut self.margin_right);
+        
+        resolve(&mut self.padding_top);
+        resolve(&mut self.padding_bottom);
+        resolve(&mut self.padding_left);
+        resolve(&mut self.padding_right);
+        
+        resolve(&mut self.border_top_width);
+        resolve(&mut self.border_bottom_width);
+        resolve(&mut self.border_left_width);
+        resolve(&mut self.border_right_width);
+    }
+}

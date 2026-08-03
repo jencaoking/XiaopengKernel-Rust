@@ -13,7 +13,7 @@ fn test_style_resolver_simple_tag() {
     let sheet = parser.parse();
 
     let resolver = StyleResolver::new(&sheet);
-    let style = resolver.resolve_style(&div);
+    let style = resolver.resolve_style(&div, None, 16.0, 800.0, 600.0);
 
     assert_eq!(style.color, Color { r: 255, g: 0, b: 0, a: 255 });
 }
@@ -29,7 +29,7 @@ fn test_style_resolver_class() {
     let sheet = parser.parse();
 
     let resolver = StyleResolver::new(&sheet);
-    let style = resolver.resolve_style(&div);
+    let style = resolver.resolve_style(&div, None, 16.0, 800.0, 600.0);
 
     assert_eq!(style.width, xiaopeng_style::computed_style::CssLength::Px(100.0));
 }
@@ -51,7 +51,7 @@ fn test_style_resolver_descendant() {
     let sheet = parser.parse();
 
     let resolver = StyleResolver::new(&sheet);
-    let style = resolver.resolve_style(&span);
+    let style = resolver.resolve_style(&span, None, 16.0, 800.0, 600.0);
 
     assert_eq!(style.display, Display::Block);
 }
@@ -68,7 +68,7 @@ fn test_style_resolver_specificity() {
     let sheet = parser.parse();
 
     let resolver = StyleResolver::new(&sheet);
-    let style = resolver.resolve_style(&div);
+    let style = resolver.resolve_style(&div, None, 16.0, 800.0, 600.0);
 
     // ID should win over Class
     assert_eq!(style.color, Color { r: 255, g: 0, b: 0, a: 255 });
@@ -83,7 +83,7 @@ fn test_style_resolver_order() {
     let sheet = parser.parse();
 
     let resolver = StyleResolver::new(&sheet);
-    let style = resolver.resolve_style(&div);
+    let style = resolver.resolve_style(&div, None, 16.0, 800.0, 600.0);
 
     // Last rule should win due to identical specificity
     assert_eq!(style.color, Color { r: 0, g: 0, b: 255, a: 255 });

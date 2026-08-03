@@ -13,10 +13,16 @@ pub struct StyledNode {
 }
 
 impl StyledNode {
-    /// Recursively builds a tree of StyledNodes starting from a DOM node.
-    /// Elements with `display: none` are completely omitted from the tree.
-    pub fn build(node: &NodePtr, resolver: &StyleResolver) -> Option<StyledNode> {
-        let style = resolver.resolve_style(node);
+
+    pub fn build(
+        node: &NodePtr, 
+        resolver: &StyleResolver,
+        parent_style: Option<&ComputedStyle>,
+        root_font_size: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Option<StyledNode> {
+        let style = resolver.resolve_style(node, parent_style, root_font_size, viewport_width, viewport_height);
         
         // If display is None, the element and all its children are removed from the render tree
         if style.display == Display::None {
@@ -26,8 +32,12 @@ impl StyledNode {
         let mut children = Vec::new();
         
         let node_ref = node.read().unwrap();
+        
+        // If this is the root node (html), its font size becomes the root font size for children
+        let current_root_font_size = if parent_style.is_none() { style.font_size } else { root_font_size };
+
         for child in &node_ref.children {
-            if let Some(styled_child) = Self::build(child, resolver) {
+            if let Some(styled_child) = Self::build(child, resolver, Some(&style), current_root_font_size, viewport_width, viewport_height) {
                 children.push(styled_child);
             }
         }

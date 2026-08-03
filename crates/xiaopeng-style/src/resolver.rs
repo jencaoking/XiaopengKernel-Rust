@@ -14,8 +14,21 @@ impl<'a> StyleResolver<'a> {
         Self { stylesheet }
     }
 
-    pub fn resolve_style(&self, node: &NodePtr) -> ComputedStyle {
+    pub fn resolve_style(
+        &self, 
+        node: &NodePtr,
+        parent_style: Option<&ComputedStyle>,
+        root_font_size: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> ComputedStyle {
         let mut computed = ComputedStyle::default();
+        if let Some(parent) = parent_style {
+            // Inherit inheritable properties
+            computed.color = parent.color;
+            computed.font_size = parent.font_size;
+            // (other inheritable properties can be added here)
+        }
         let mut matched_rules = Vec::new();
 
         for (rule_idx, rule) in self.stylesheet.rules.iter().enumerate() {
@@ -39,7 +52,7 @@ impl<'a> StyleResolver<'a> {
         for (rule, _, _) in &matched_rules {
             for decl in &rule.declarations {
                 if !decl.important {
-                    self.apply_declaration(&mut computed, decl);
+                    self.apply_declaration(&mut computed, decl, parent_style.map_or(16.0, |p| p.font_size), root_font_size, viewport_width, viewport_height);
                 }
             }
         }
@@ -48,21 +61,30 @@ impl<'a> StyleResolver<'a> {
         for (rule, _, _) in &matched_rules {
             for decl in &rule.declarations {
                 if decl.important {
-                    self.apply_declaration(&mut computed, decl);
+                    self.apply_declaration(&mut computed, decl, parent_style.map_or(16.0, |p| p.font_size), root_font_size, viewport_width, viewport_height);
                 }
             }
         }
 
+        computed.resolve_relative_units(computed.font_size, root_font_size, viewport_width, viewport_height);
         computed
     }
 
 
 
     pub fn apply_declaration_pub(&self, style: &mut ComputedStyle, decl: &Declaration) {
-        self.apply_declaration(style, decl);
+        self.apply_declaration(style, decl, 16.0, 16.0, 800.0, 600.0);
     }
 
-    fn apply_declaration(&self, style: &mut ComputedStyle, decl: &Declaration) {
+    fn apply_declaration(
+        &self, 
+        style: &mut ComputedStyle, 
+        decl: &Declaration,
+        parent_font_size: f32,
+        root_font_size: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) {
         match decl.property.as_str() {
             "display" => {
                 style.display = match decl.value.as_str() {
@@ -121,10 +143,15 @@ impl<'a> StyleResolver<'a> {
                 }
             }
             "font-size" => {
-                // Font size should resolve to px
                 if let Some(v) = parse_length(&decl.value) {
-                    if let crate::computed_style::CssLength::Px(px) = v {
-                        style.font_size = px;
+                    match v {
+                        crate::computed_style::CssLength::Px(px) => style.font_size = px,
+                        crate::computed_style::CssLength::Em(em) => style.font_size = em * parent_font_size,
+                        crate::computed_style::CssLength::Rem(rem) => style.font_size = rem * root_font_size,
+                        crate::computed_style::CssLength::Vh(vh) => style.font_size = vh * viewport_height / 100.0,
+                        crate::computed_style::CssLength::Vw(vw) => style.font_size = vw * viewport_width / 100.0,
+                        crate::computed_style::CssLength::Percent(p) => style.font_size = p * parent_font_size / 100.0,
+                        _ => {}
                     }
                 }
             }

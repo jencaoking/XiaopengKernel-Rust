@@ -25,7 +25,7 @@ pub fn compute_layout(
     info!("Computing layout for viewport {}x{}", viewport_width, viewport_height);
     
     // 1. Build layout tree from DOM
-    let mut root_box = build_layout_tree(document_node)
+    let mut root_box = build_layout_tree(document_node, None, 16.0, viewport_width, viewport_height)
         .ok_or_else(|| xiaopeng_common::XiaopengError::LayoutError { component: "Builder".into(), message: "Failed to build layout tree".into() })?;
         
     // 2. Perform layout passes (starting with block layout on root)
