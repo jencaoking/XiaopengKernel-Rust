@@ -7,69 +7,129 @@ pub fn matches_simple_selector(node: &NodePtr, part: &SimpleSelector) -> bool {
     let n = node.read().unwrap();
     match &n.data {
         NodeData::Element(el) => match part.selector_type {
-            SelectorType::Tag => el.tag_name == part.value,
+            SelectorType::Tag => el.tag_name.eq_ignore_ascii_case(&part.value) || part.value == "*",
             SelectorType::Id => el.id().map(|s| s.as_str()) == Some(&part.value),
             SelectorType::Class => el.classes().contains(&part.value.as_str()),
             SelectorType::Universal => true,
-            _ => false, // Attributes and pseudo-classes unimplemented in matching stub
+            SelectorType::Attribute => {
+                let name = part.attribute_name.as_ref().unwrap();
+                if !el.has_attribute(name) { return false; }
+                let op = part.attribute_operator.as_ref().unwrap();
+                if *op == crate::selector::AttributeOperator::Exists { return true; }
+                let val = part.attribute_value.as_ref().unwrap();
+                let actual = el.get_attribute(name).unwrap();
+                match op {
+                    crate::selector::AttributeOperator::Exact => actual == val,
+                    crate::selector::AttributeOperator::Includes => actual.split_whitespace().any(|s| s == val),
+                    crate::selector::AttributeOperator::DashMatch => actual == val || actual.starts_with(&format!("{}-", val)),
+                    crate::selector::AttributeOperator::Prefix => actual.starts_with(val),
+                    crate::selector::AttributeOperator::Suffix => actual.ends_with(val),
+                    crate::selector::AttributeOperator::Substring => actual.contains(val),
+                    _ => false,
+                }
+            }
+            SelectorType::PseudoClass => {
+                match part.value.as_str() {
+                    "first-child" => {
+                        if let Some(p) = n.parent.as_ref().and_then(|w| w.upgrade()) {
+                            let p_node = p.read().unwrap();
+                            p_node.children.iter().find(|c| matches!(c.read().unwrap().data, NodeData::Element(_)))
+                                .map_or(false, |first| Arc::ptr_eq(first, node))
+                        } else { false }
+                    },
+                    "last-child" => {
+                        if let Some(p) = n.parent.as_ref().and_then(|w| w.upgrade()) {
+                            let p_node = p.read().unwrap();
+                            p_node.children.iter().rev().find(|c| matches!(c.read().unwrap().data, NodeData::Element(_)))
+                                .map_or(false, |last| Arc::ptr_eq(last, node))
+                        } else { false }
+                    },
+                    "empty" => n.children.iter().all(|c| {
+                        let cn = c.read().unwrap();
+                        match &cn.data {
+                            NodeData::Element(_) => false,
+                            NodeData::Text(t) => t.trim().is_empty(),
+                            _ => true,
+                        }
+                    }),
+                    "root" => el.tag_name.eq_ignore_ascii_case("html"),
+                    _ => false,
+                }
+            },
+            _ => false,
         },
         _ => false,
     }
 }
 
 pub fn matches_selector(node: &NodePtr, selector: &Selector) -> bool {
-    if selector.parts.is_empty() {
-        return false;
+    if selector.parts.is_empty() { return false; }
+
+    fn get_parent(node: &NodePtr) -> Option<NodePtr> {
+        node.read().unwrap().parent.as_ref().and_then(|w| w.upgrade())
     }
 
-    // Match from right to left (rightmost part must match current node)
-    let mut current_node = Some(Arc::clone(node));
-    let mut part_idx = selector.parts.len() as isize - 1;
-
-    while part_idx >= 0 {
-        let part = &selector.parts[part_idx as usize];
-        let Some(ref curr) = current_node else { return false; };
-
-        if !matches_simple_selector(curr, part) {
-            // If it's a descendant combinator, we can ascend the tree looking for a match
-            if part_idx < selector.parts.len() as isize - 1 {
-                let comb = selector.combinators[part_idx as usize];
-                if comb == Combinator::Descendant {
-                    let parent = {
-                        let n = curr.read().unwrap();
-                        n.parent.as_ref().and_then(|w| w.upgrade())
-                    };
-                    current_node = parent;
-                    continue;
-                }
-            }
-            return false;
+    fn get_prev_sibling(node: &NodePtr) -> Option<NodePtr> {
+        let p = get_parent(node)?;
+        let p_node = p.read().unwrap();
+        let mut prev = None;
+        for child in &p_node.children {
+            if !matches!(child.read().unwrap().data, NodeData::Element(_)) { continue; }
+            if Arc::ptr_eq(child, node) { return prev; }
+            prev = Some(Arc::clone(child));
         }
+        None
+    }
 
+    fn match_parts(curr: &NodePtr, selector: &Selector, part_idx: isize) -> bool {
+        if part_idx < 0 { return true; }
+        
+        let part = &selector.parts[part_idx as usize];
+        
         if part_idx > 0 {
             let comb = selector.combinators[(part_idx - 1) as usize];
-            match comb {
-                Combinator::None => {
-                    // In valid AST, multiple parts with `None` combinator (like div.class)
-                    // apply to the same element. They are usually merged or we just check them all.
-                    // Here we just keep `current_node` the same for the next iteration.
-                }
-                Combinator::Descendant | Combinator::Child => {
-                    let parent = {
-                        let n = curr.read().unwrap();
-                        n.parent.as_ref().and_then(|w| w.upgrade())
-                    };
-                    current_node = parent;
-                }
-                Combinator::NextSibling | Combinator::SubsequentSibling => {
-                    // Simplification for stubs
-                    return false;
-                }
+            if comb == Combinator::None {
+                if !matches_simple_selector(curr, part) { return false; }
+                return match_parts(curr, selector, part_idx - 1);
             }
         }
-        part_idx -= 1;
+        
+        if !matches_simple_selector(curr, part) { return false; }
+        if part_idx == 0 { return true; }
+        
+        let comb = selector.combinators[(part_idx - 1) as usize];
+        match comb {
+            Combinator::None => unreachable!(),
+            Combinator::Child => {
+                if let Some(p) = get_parent(curr) {
+                    match_parts(&p, selector, part_idx - 1)
+                } else { false }
+            }
+            Combinator::Descendant => {
+                let mut p = get_parent(curr);
+                while let Some(parent) = p {
+                    if match_parts(&parent, selector, part_idx - 1) { return true; }
+                    p = get_parent(&parent);
+                }
+                false
+            }
+            Combinator::NextSibling => {
+                if let Some(prev) = get_prev_sibling(curr) {
+                    match_parts(&prev, selector, part_idx - 1)
+                } else { false }
+            }
+            Combinator::SubsequentSibling => {
+                let mut prev = get_prev_sibling(curr);
+                while let Some(ps) = prev {
+                    if match_parts(&ps, selector, part_idx - 1) { return true; }
+                    prev = get_prev_sibling(&ps);
+                }
+                false
+            }
+        }
     }
-    true
+
+    match_parts(node, selector, selector.parts.len() as isize - 1)
 }
 
 pub fn query_selector_all(root: &NodePtr, selector_str: &str) -> Vec<NodePtr> {
