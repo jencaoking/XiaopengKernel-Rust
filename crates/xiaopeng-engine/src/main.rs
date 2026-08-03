@@ -19,17 +19,16 @@ async fn main() -> XiaopengResult<()> {
     };
 
     let mut engine = BrowserEngine::new(config);
-    engine.load_html(
-        r#"
-        <!DOCTYPE html>
-        <html>
-            <head><title>XiaopengKernel Rust</title></head>
-            <body>
-                <h1 style="color: red;">Hello XiaopengKernel Rust!</h1>
-            </body>
-        </html>
-    "#,
-    )?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        let url = &args[1];
+        info!("Loading URL from command line: {}", url);
+        engine.load_url(url).await?;
+    } else {
+        let default_url = "https://neverssl.com";
+        info!("No URL provided, loading default: {}", default_url);
+        engine.load_url(default_url).await?;
+    }
 
     info!("🎉 Engine startup sequence completed successfully!");
     // Run in multi-threaded actor mode
