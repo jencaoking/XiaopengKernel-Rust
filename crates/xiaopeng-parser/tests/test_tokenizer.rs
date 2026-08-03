@@ -25,12 +25,13 @@ fn test_tokenizer_simple_text() {
         }
     }
     
-    // In our simplified Rust tokenizer, we emit char by char for Data state initially.
-    // In a real tokenizer, contiguous text might be buffered, but right now we emit characters.
-    // We expect 11 Character tokens + 1 Eof token.
-    assert_eq!(tokens.len(), 12);
-    assert_eq!(tokens[0], HtmlToken::Character('H'));
-    assert_eq!(tokens[11], HtmlToken::Eof);
+    // Contiguous characters of the same type (whitespace/non-whitespace) are merged.
+    // We expect 3 Character tokens ("Hello", " ", "World") + 1 Eof token.
+    assert_eq!(tokens.len(), 4);
+    assert_eq!(tokens[0], HtmlToken::Character("Hello".to_string()));
+    assert_eq!(tokens[1], HtmlToken::Character(" ".to_string()));
+    assert_eq!(tokens[2], HtmlToken::Character("World".to_string()));
+    assert_eq!(tokens[3], HtmlToken::Eof);
 }
 
 #[test]
@@ -99,7 +100,7 @@ fn test_tokenizer_rawtext_script() {
     loop {
         let t = tokenizer.next_token().unwrap().unwrap();
         match t {
-            HtmlToken::Character(c) => script_content.push(c),
+            HtmlToken::Character(c) => script_content.push_str(&c),
             HtmlToken::EndTag { name } => {
                 assert_eq!(name, "script");
                 break;

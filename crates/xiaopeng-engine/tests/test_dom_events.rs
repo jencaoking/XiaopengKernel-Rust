@@ -7,6 +7,8 @@ fn make_engine() -> BrowserEngine {
         title: "Event Test".into(),
         width: 800,
         height: 600,
+        headless: true,
+        headless_output: None,
     })
 }
 

@@ -26,7 +26,7 @@ pub enum HtmlToken {
     EndTag {
         name: String,
     },
-    Character(char),
+    Character(String),
     Comment(String),
     Cdata(String),
     Eof,
@@ -249,23 +249,29 @@ impl HtmlTokenizer {
 
             match self.state {
                 TokenizerState::Data => {
-                    if eof {
-                        return Ok(self.emit(HtmlToken::Eof));
-                    }
-                    match ch {
-                        '<' => self.state = TokenizerState::TagOpen,
-                        '\0' => {
-                            // Parse error, emit replacement character
-                            return Ok(self.emit(HtmlToken::Character('\u{FFFD}')));
+                    if eof { return Ok(self.emit(HtmlToken::Eof)); }
+                    if ch == '<' {
+                        self.state = TokenizerState::TagOpen;
+                    } else if ch == '\0' {
+                        return Ok(self.emit(HtmlToken::Character("\u{FFFD}".to_string())));
+                    } else {
+                        let mut s = String::new();
+                        s.push(ch);
+                        let is_ws = ch.is_whitespace();
+                        while let Some(&next_c) = self.buffer.front() {
+                            if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
+                            s.push(self.buffer.pop_front().unwrap());
+                            self.position += 1;
+                            if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
                         }
-                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                        return Ok(self.emit(HtmlToken::Character(s)));
                     }
                 }
                 TokenizerState::TagOpen => {
                     if eof {
                         // Parse error
                         self.reconsume_in(TokenizerState::Data);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                     match ch {
                         '!' => self.state = TokenizerState::MarkupDeclarationOpen,
@@ -282,7 +288,7 @@ impl HtmlTokenizer {
                         _ => {
                             // Parse error
                             self.reconsume_in(TokenizerState::Data);
-                            return Ok(self.emit(HtmlToken::Character('<')));
+                            return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                         }
                     }
                 }
@@ -307,7 +313,7 @@ impl HtmlTokenizer {
                 TokenizerState::EndTagOpen => {
                     if eof {
                         self.reconsume_in(TokenizerState::Data);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                     match ch {
                         'a'..='z' | 'A'..='Z' => {
@@ -1001,10 +1007,21 @@ impl HtmlTokenizer {
                 }
                 TokenizerState::Rcdata => {
                     if eof { return Ok(self.emit(HtmlToken::Eof)); }
-                    match ch {
-                        '<' => self.state = TokenizerState::RcdataLessThanSign,
-                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
-                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    if ch == '<' {
+                        self.state = TokenizerState::RcdataLessThanSign;
+                    } else if ch == '\0' {
+                        return Ok(self.emit(HtmlToken::Character("\u{FFFD}".to_string())));
+                    } else {
+                        let mut s = String::new();
+                        s.push(ch);
+                        let is_ws = ch.is_whitespace();
+                        while let Some(&next_c) = self.buffer.front() {
+                            if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
+                            s.push(self.buffer.pop_front().unwrap());
+                            self.position += 1;
+                            if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
+                        }
+                        return Ok(self.emit(HtmlToken::Character(s)));
                     }
                 }
                 TokenizerState::RcdataLessThanSign => {
@@ -1013,7 +1030,7 @@ impl HtmlTokenizer {
                         self.state = TokenizerState::RcdataEndTagOpen;
                     } else {
                         self.reconsume_in(TokenizerState::Rcdata);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::RcdataEndTagOpen => {
@@ -1022,7 +1039,7 @@ impl HtmlTokenizer {
                         self.reconsume_in(TokenizerState::RcdataEndTagName);
                     } else {
                         self.reconsume_in(TokenizerState::Rcdata);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::RcdataEndTagName => {
@@ -1044,15 +1061,26 @@ impl HtmlTokenizer {
                         }
                     } else {
                         self.state = TokenizerState::Rcdata;
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::Rawtext => {
                     if eof { return Ok(self.emit(HtmlToken::Eof)); }
-                    match ch {
-                        '<' => self.state = TokenizerState::RawtextLessThanSign,
-                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
-                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    if ch == '<' {
+                        self.state = TokenizerState::RawtextLessThanSign;
+                    } else if ch == '\0' {
+                        return Ok(self.emit(HtmlToken::Character("\u{FFFD}".to_string())));
+                    } else {
+                        let mut s = String::new();
+                        s.push(ch);
+                        let is_ws = ch.is_whitespace();
+                        while let Some(&next_c) = self.buffer.front() {
+                            if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
+                            s.push(self.buffer.pop_front().unwrap());
+                            self.position += 1;
+                            if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
+                        }
+                        return Ok(self.emit(HtmlToken::Character(s)));
                     }
                 }
                 TokenizerState::RawtextLessThanSign => {
@@ -1061,7 +1089,7 @@ impl HtmlTokenizer {
                         self.state = TokenizerState::RawtextEndTagOpen;
                     } else {
                         self.reconsume_in(TokenizerState::Rawtext);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::RawtextEndTagOpen => {
@@ -1070,7 +1098,7 @@ impl HtmlTokenizer {
                         self.reconsume_in(TokenizerState::RawtextEndTagName);
                     } else {
                         self.reconsume_in(TokenizerState::Rawtext);
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::RawtextEndTagName => {
@@ -1091,14 +1119,24 @@ impl HtmlTokenizer {
                         }
                     } else {
                         self.state = TokenizerState::Rawtext;
-                        return Ok(self.emit(HtmlToken::Character('<')));
+                        return Ok(self.emit(HtmlToken::Character('<'.to_string())));
                     }
                 }
                 TokenizerState::Plaintext => {
                     if eof { return Ok(self.emit(HtmlToken::Eof)); }
-                    match ch {
-                        '\0' => return Ok(self.emit(HtmlToken::Character('\u{FFFD}'))),
-                        _ => return Ok(self.emit(HtmlToken::Character(ch))),
+                    if ch == '\0' {
+                        return Ok(self.emit(HtmlToken::Character("\u{FFFD}".to_string())));
+                    } else {
+                        let mut s = String::new();
+                        s.push(ch);
+                        let is_ws = ch.is_whitespace();
+                        while let Some(&next_c) = self.buffer.front() {
+                            if next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
+                            s.push(self.buffer.pop_front().unwrap());
+                            self.position += 1;
+                            if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
+                        }
+                        return Ok(self.emit(HtmlToken::Character(s)));
                     }
                 }
                 TokenizerState::CdataSection => {

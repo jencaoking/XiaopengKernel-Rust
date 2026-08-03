@@ -51,7 +51,7 @@ pub struct HtmlTreeBuilder {
     pub frameset_ok: bool,
     pub quirks_mode: bool,
     pub foster_parenting: bool,
-    pub pending_table_character_tokens: Vec<char>,
+    pub pending_table_character_tokens: String,
 }
 
 impl HtmlTreeBuilder {
@@ -70,7 +70,7 @@ impl HtmlTreeBuilder {
             frameset_ok: true,
             quirks_mode: false,
             foster_parenting: false,
-            pending_table_character_tokens: Vec::new(),
+            pending_table_character_tokens: String::new(),
         }
     }
 
@@ -109,7 +109,7 @@ impl HtmlTreeBuilder {
 
     fn process_initial(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => (),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { name, public_id, system_id, .. } => {
                 let dt_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::DocumentType(xiaopeng_dom::DocumentTypeData {
@@ -132,7 +132,7 @@ impl HtmlTreeBuilder {
 
     fn process_before_html(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => (),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "html" => {
                 self.insert_element_with_token(token);
@@ -148,7 +148,7 @@ impl HtmlTreeBuilder {
 
     fn process_before_head(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => (),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => (),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "head" => {
                 self.insert_element_with_token(token);
@@ -165,7 +165,7 @@ impl HtmlTreeBuilder {
 
     fn process_in_head(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if matches!(name.as_str(), "base" | "basefont" | "bgsound" | "link" | "meta") => {
                 self.insert_element_with_token(token);
@@ -193,7 +193,7 @@ impl HtmlTreeBuilder {
 
     fn process_in_head_noscript(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::EndTag { name } if name == "noscript" => {
                 self.open_elements.pop();
@@ -209,7 +209,7 @@ impl HtmlTreeBuilder {
 
     fn process_after_head(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "body" => {
                 self.insert_element_with_token(token);
@@ -228,7 +228,7 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Character(c) => {
                 self.reconstruct_active_formatting_elements();
-                self.insert_character(*c);
+                self.insert_character(c);
             }
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Cdata(ref c) => self.insert_cdata(c),
@@ -292,7 +292,7 @@ impl HtmlTreeBuilder {
 
     fn process_text(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::Character(c) => self.insert_character(c),
             HtmlToken::EndTag { .. } => {
                 self.open_elements.pop();
                 self.insertion_mode = self.original_insertion_mode;
@@ -339,25 +339,21 @@ impl HtmlTreeBuilder {
     }
     fn process_in_table_text(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if *c != '\0' => {
-                self.pending_table_character_tokens.push(*c);
+            HtmlToken::Character(c) if !c.contains('\0') => {
+                self.pending_table_character_tokens.push_str(c);
             }
             HtmlToken::Character(_) => {}, // ignore null
             _ => {
-                let contains_non_whitespace = self.pending_table_character_tokens.iter().any(|c| !c.is_whitespace());
+                let contains_non_whitespace = self.pending_table_character_tokens.chars().any(|c| !c.is_whitespace());
                 if contains_non_whitespace {
                     // Parse error
                     self.foster_parenting = true;
                     let tokens = std::mem::take(&mut self.pending_table_character_tokens);
-                    for c in tokens {
-                        self.process_in_body(&HtmlToken::Character(c));
-                    }
+                    self.process_in_body(&HtmlToken::Character(tokens));
                     self.foster_parenting = false;
                 } else {
                     let tokens = std::mem::take(&mut self.pending_table_character_tokens);
-                    for c in tokens {
-                        self.insert_character(c);
-                    }
+                    self.insert_character(&tokens);
                 }
                 self.insertion_mode = self.original_insertion_mode;
                 self.process_token(token.clone());
@@ -375,7 +371,7 @@ impl HtmlTreeBuilder {
     }
     fn process_in_column_group(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::StartTag { name, .. } if name == "col" => {
                 self.insert_element_with_token(token);
                 self.open_elements.pop();
@@ -446,7 +442,7 @@ impl HtmlTreeBuilder {
     }
     fn process_in_select(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) => self.insert_character(*c),
+            HtmlToken::Character(c) => self.insert_character(c),
             HtmlToken::StartTag { name, .. } if name == "option" => self.insert_element_with_token(token),
             HtmlToken::StartTag { name, .. } if name == "optgroup" => self.insert_element_with_token(token),
             HtmlToken::EndTag { name } if name == "option" || name == "optgroup" => self.pop_until_element(name),
@@ -478,7 +474,7 @@ impl HtmlTreeBuilder {
     }
     fn process_after_body(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::EndTag { name } if name == "html" => self.insertion_mode = InsertionMode::AfterAfterBody,
             HtmlToken::Eof => (),
@@ -490,7 +486,7 @@ impl HtmlTreeBuilder {
     }
     fn process_in_frameset(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::StartTag { name, .. } if name == "frameset" => self.insert_element_with_token(token),
             HtmlToken::StartTag { name, .. } if name == "frame" => {
@@ -506,7 +502,7 @@ impl HtmlTreeBuilder {
     }
     fn process_after_frameset(&mut self, token: &HtmlToken) {
         match token {
-            HtmlToken::Character(c) if c.is_whitespace() => self.insert_character(*c),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.insert_character(c),
             HtmlToken::EndTag { name } if name == "html" => self.insertion_mode = InsertionMode::AfterAfterFrameset,
             _ => {}
         }
@@ -515,7 +511,7 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { .. } => (),
-            HtmlToken::Character(c) if c.is_whitespace() => self.process_in_body(token),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.process_in_body(token),
             HtmlToken::StartTag { name, .. } if name == "html" => self.process_in_body(token),
             HtmlToken::Eof => (),
             _ => {
@@ -528,7 +524,7 @@ impl HtmlTreeBuilder {
         match token {
             HtmlToken::Comment(_) => self.insert_comment(token),
             HtmlToken::Doctype { .. } => (),
-            HtmlToken::Character(c) if c.is_whitespace() => self.process_in_frameset(token),
+            HtmlToken::Character(c) if c.chars().all(|c| c.is_whitespace()) => self.process_in_frameset(token),
             HtmlToken::StartTag { name, .. } if name == "html" => self.process_in_body(token),
             HtmlToken::Eof => (),
             _ => {
@@ -539,7 +535,7 @@ impl HtmlTreeBuilder {
     }
     fn process_plaintext(&mut self, token: &HtmlToken) {
         if let HtmlToken::Character(c) = token {
-            self.insert_character(*c);
+            self.insert_character(c);
         }
     }
 
@@ -593,7 +589,7 @@ impl HtmlTreeBuilder {
         self.open_elements.push(new_node);
     }
 
-    pub fn insert_character(&mut self, c: char) {
+    pub fn insert_character(&mut self, text: &str) {
         let (target, before) = self.appropriate_place_for_inserting_node(None);
         let last_child = if let Some(b) = &before {
             let t = target.read().unwrap();
@@ -607,12 +603,12 @@ impl HtmlTreeBuilder {
         if let Some(lc) = last_child {
             let mut node = lc.write().unwrap();
             if let xiaopeng_dom::NodeData::Text(ref mut t) = node.data {
-                t.push(c);
+                t.push_str(text);
                 appended = true;
             }
         }
         if !appended {
-            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(c.to_string()));
+            let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(text.to_string()));
             if let Some(b) = before {
                 let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
             } else {
