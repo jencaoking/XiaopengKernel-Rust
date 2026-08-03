@@ -26,34 +26,34 @@ impl DisplayList {
         let boxes = ctx.flatten();
         
         for box_ref in boxes {
-            let rect = box_ref.dimensions.border_box();
-            
-            // Background
+            let padding_rect = box_ref.dimensions.padding_box();
+            let border_rect = box_ref.dimensions.border_box();
+
+            // Background fills the padding box (content + padding)
             if box_ref.style.background_color.a > 0 {
                 list.commands.push(DisplayCommand::DrawRect {
-                    rect,
+                    rect: padding_rect,
                     color: box_ref.style.background_color,
                 });
             }
-            
-            // Border
+
+            // Border strokes the border box
             let border_width = box_ref.dimensions.border.top.max(box_ref.dimensions.border.left);
             if border_width > 0.0 && box_ref.style.border_color.a > 0 {
                 list.commands.push(DisplayCommand::DrawBorder {
-                    rect,
+                    rect: border_rect,
                     color: box_ref.style.border_color,
                     width: border_width,
                 });
             }
-            
-            // Text
+
+            // Text renders at content rect
             if let BoxType::TextNode(ref text) = box_ref.box_type {
-                let font_size = box_ref.style.font_size;
                 list.commands.push(DisplayCommand::DrawText {
                     text: text.clone(),
                     rect: box_ref.dimensions.content,
                     color: box_ref.style.color,
-                    font_size,
+                    font_size: box_ref.style.font_size,
                 });
             }
         }

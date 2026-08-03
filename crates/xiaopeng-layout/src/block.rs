@@ -18,44 +18,60 @@ pub fn layout_block(node: &mut LayoutBox, containing_block_width: f32, offset_x:
 
 fn calculate_block_width(node: &mut LayoutBox, containing_block_width: f32) {
     let style = &node.style;
-    
-    // Default width is the containing block width (simulating width: auto)
-    // If a specific width is set, use it.
-    let mut width = style.width.to_px(containing_block_width).unwrap_or(containing_block_width);
-    
-    // For now, margin/padding are 0 unless implemented in style resolver
-    // In a full implementation we'd subtract margin/padding from width if box-sizing: content-box
-    
-    if width > containing_block_width {
-        width = containing_block_width;
-    }
-    
-    node.dimensions.content.width = width;
+
+    // Resolve horizontal edges from style
+    let margin_l = LayoutBox::resolve_length_pub(style.margin_left);
+    let margin_r = LayoutBox::resolve_length_pub(style.margin_right);
+    let padding_l = LayoutBox::resolve_length_pub(style.padding_left);
+    let padding_r = LayoutBox::resolve_length_pub(style.padding_right);
+    let border_l = LayoutBox::resolve_length_pub(style.border_left_width);
+    let border_r = LayoutBox::resolve_length_pub(style.border_right_width);
+
+    // Store to dimensions (will be overwritten if style changed, but good for now)
+    node.dimensions.margin.left = margin_l;
+    node.dimensions.margin.right = margin_r;
+    node.dimensions.padding.left = padding_l;
+    node.dimensions.padding.right = padding_r;
+    node.dimensions.border.left = border_l;
+    node.dimensions.border.right = border_r;
+
+    let total_fixed = margin_l + margin_r + padding_l + padding_r + border_l + border_r;
+    let available = (containing_block_width - total_fixed).max(0.0);
+
+    let width = style.width.to_px(containing_block_width).unwrap_or(available);
+    node.dimensions.content.width = width.min(available);
 }
 
 fn calculate_block_position(node: &mut LayoutBox, offset_x: f32, offset_y: f32) {
+    let style = &node.style;
     let d = &mut node.dimensions;
-    // Absolute position x includes parent's absolute x + node's left margin + parent's padding/border (passed as offset_x)
-    d.content.x = offset_x + d.margin.left;
-    d.content.y = offset_y + d.margin.top;
+
+    // Resolve vertical edges
+    d.margin.top = LayoutBox::resolve_length_pub(style.margin_top);
+    d.margin.bottom = LayoutBox::resolve_length_pub(style.margin_bottom);
+    d.padding.top = LayoutBox::resolve_length_pub(style.padding_top);
+    d.padding.bottom = LayoutBox::resolve_length_pub(style.padding_bottom);
+    d.border.top = LayoutBox::resolve_length_pub(style.border_top_width);
+    d.border.bottom = LayoutBox::resolve_length_pub(style.border_bottom_width);
+
+    // Absolute position: offset includes parent's content x/y
+    // content.x/y starts at the padding edge of the containing block
+    d.content.x = offset_x + d.padding.left + d.border.left + d.margin.left;
+    d.content.y = offset_y + d.padding.top + d.border.top + d.margin.top;
 }
 
 fn layout_block_children(node: &mut LayoutBox) {
-    let d = &mut node.dimensions;
-    let mut current_y = d.content.y; // Start at parent's absolute content Y
-    
-    let parent_content_width = d.content.width;
-    let parent_content_x = d.content.x;
+    let parent_content_width = node.dimensions.content.width;
+    let parent_content_x = node.dimensions.content.x;
+    let mut current_y = node.dimensions.content.y;
 
     for child in &mut node.children {
         crate::layout_box_recursive(
-            child, 
-            parent_content_width, 
-            parent_content_x, // offset_x for child is parent's content x
-            current_y         // offset_y for child is the current vertical cursor
+            child,
+            parent_content_width,
+            parent_content_x,
+            current_y,
         );
-        
-        // Advance current_y by the child's total height (margin box)
         current_y += child.dimensions.margin_box().height;
     }
 }
@@ -64,8 +80,7 @@ fn calculate_block_height(node: &mut LayoutBox) {
     if let Some(explicit_height) = node.style.height.to_px(0.0) {
         node.dimensions.content.height = explicit_height;
     } else {
-        // Height is the sum of children heights (already accumulated in layout_block_children)
-        let mut h = 0.0;
+        let mut h = 0.0f32;
         for child in &node.children {
             h += child.dimensions.margin_box().height;
         }

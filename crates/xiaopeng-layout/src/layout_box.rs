@@ -96,6 +96,10 @@ impl LayoutBox {
         }
     }
 
+    pub fn resolve_length_pub(len: xiaopeng_style::computed_style::CssLength) -> f32 {
+        Self::resolve_length(len)
+    }
+
     fn resolve_length(len: xiaopeng_style::computed_style::CssLength) -> f32 {
         use xiaopeng_style::computed_style::CssLength;
         match len {

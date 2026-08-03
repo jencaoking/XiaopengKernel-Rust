@@ -21,17 +21,75 @@ pub fn init_style() -> XiaopengResult<()> {
 }
 
 pub fn resolve_style(node: &NodePtr) -> ComputedStyle {
-    // Basic stub: in a real engine, this requires access to the parsed stylesheets.
-    // For now, we return default style, but we might set display to None for elements like <head>.
+    use computed_style::{CssLength, Display};
+
     let mut style = ComputedStyle::default();
-    
+
     let n = node.read().unwrap();
-    if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
-        if el.tag_name == "head" || el.tag_name == "style" || el.tag_name == "script" || el.tag_name == "title" {
+    let el = match &n.data {
+        xiaopeng_dom::NodeData::Element(el) => el,
+        _ => return style,
+    };
+
+    // --- 1. UA Stylesheet defaults ---
+    match el.tag_name.as_str() {
+        "head" | "style" | "script" | "title" | "meta" | "link" => {
             style.display = Display::None;
+            return style;
+        }
+        "html" | "body" | "div" | "section" | "article" | "main"
+        | "header" | "footer" | "nav" | "aside" | "figure"
+        | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+        | "ul" | "ol" | "li" | "table" | "form" | "fieldset"
+        | "blockquote" | "pre" | "details" | "summary" => {
+            style.display = Display::Block;
+        }
+        "span" | "a" | "em" | "strong" | "b" | "i" | "u" | "s"
+        | "small" | "code" | "kbd" | "mark" | "abbr" | "cite"
+        | "sub" | "sup" | "label" | "button" | "input" | "select"
+        | "textarea" | "img" | "br" | "time" | "data" => {
+            style.display = Display::Inline;
+        }
+        _ => {
+            style.display = Display::Block;
         }
     }
-    
+
+    // UA font-size for headings
+    match el.tag_name.as_str() {
+        "h1" => { style.font_size = 32.0; style.margin_top = CssLength::Px(21.44); style.margin_bottom = CssLength::Px(21.44); }
+        "h2" => { style.font_size = 24.0; style.margin_top = CssLength::Px(19.92); style.margin_bottom = CssLength::Px(19.92); }
+        "h3" => { style.font_size = 18.72; style.margin_top = CssLength::Px(18.72); style.margin_bottom = CssLength::Px(18.72); }
+        "h4" => { style.font_size = 16.0; style.margin_top = CssLength::Px(21.28); style.margin_bottom = CssLength::Px(21.28); }
+        "h5" => { style.font_size = 13.28; }
+        "h6" => { style.font_size = 10.72; }
+        "p"  => { style.margin_top = CssLength::Px(16.0); style.margin_bottom = CssLength::Px(16.0); }
+        "body" => {
+            style.margin_top = CssLength::Px(8.0);
+            style.margin_bottom = CssLength::Px(8.0);
+            style.margin_left = CssLength::Px(8.0);
+            style.margin_right = CssLength::Px(8.0);
+        }
+        _ => {}
+    }
+
+    // --- 2. Parse inline style="" attribute ---
+    let inline_css = el.attributes.get("style").map(|s| s.to_string());
+    drop(n); // release read lock before calling parser
+
+    if let Some(css_text) = inline_css {
+        // Wrap in a dummy selector rule to reuse existing declaration parser
+        let wrapped = format!("__inline__ {{ {} }}", css_text);
+        if let Ok(sheet) = parser::parse_css(&wrapped) {
+            if let Some(rule) = sheet.rules.first() {
+                let resolver = StyleResolver::new(&sheet);
+                for decl in &rule.declarations {
+                    resolver.apply_declaration_pub(&mut style, decl);
+                }
+            }
+        }
+    }
+
     style
 }
 

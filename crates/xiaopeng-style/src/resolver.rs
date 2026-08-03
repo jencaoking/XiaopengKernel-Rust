@@ -127,6 +127,10 @@ impl<'a> StyleResolver<'a> {
         }
     }
 
+    pub fn apply_declaration_pub(&self, style: &mut ComputedStyle, decl: &Declaration) {
+        self.apply_declaration(style, decl);
+    }
+
     fn apply_declaration(&self, style: &mut ComputedStyle, decl: &Declaration) {
         match decl.property.as_str() {
             "display" => {
