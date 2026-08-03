@@ -8,8 +8,10 @@ pub fn build_layout_tree(node: &NodePtr) -> Option<LayoutBox> {
     let node_ref = node.read().unwrap();
     
     if node_ref.node_type() == NodeType::Document {
+        let children = node_ref.children.clone();
+        drop(node_ref);
         let mut root_box = LayoutBox::new(ComputedStyle::default(), BoxType::BlockNode, Some(node.clone()));
-        for child in &node_ref.children {
+        for child in &children {
             if let Some(child_box) = build_layout_tree(child) {
                 root_box.children.push(child_box);
             }
@@ -31,6 +33,9 @@ pub fn build_layout_tree(node: &NodePtr) -> Option<LayoutBox> {
         }
     }
     
+    let children = node_ref.children.clone();
+    drop(node_ref);
+    
     let style = xiaopeng_style::resolve_style(node);
     
     if style.display == Display::None {
@@ -44,7 +49,7 @@ pub fn build_layout_tree(node: &NodePtr) -> Option<LayoutBox> {
     
     let mut layout_box = LayoutBox::new(style, box_type, Some(node.clone()));
     
-    for child in &node_ref.children {
+    for child in &children {
         if let Some(child_box) = build_layout_tree(child) {
             layout_box.children.push(child_box);
         }

@@ -254,11 +254,13 @@ impl<'a> CssParser<'a> {
                     }
                     parts.push(SimpleSelector::new_attribute(attr_name, op, attr_val));
                 }
-                Some(c) if c.is_alphabetic() => {
+                Some(c) if c.is_alphabetic() || c == '_' || c == '-' => {
                     let tag_name = self.consume_ident();
                     parts.push(SimpleSelector::new_basic(SelectorType::Tag, tag_name));
                 }
                 _ => {
+                    // Consume the unknown character to prevent infinite loop
+                    self.consume_char();
                     parsing_part = false;
                 }
             }
