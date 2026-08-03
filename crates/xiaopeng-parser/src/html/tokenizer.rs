@@ -862,12 +862,6 @@ impl HtmlTokenizer {
                         self.state = TokenizerState::CdataSection;
                     }
                 }
-                _ => {
-                    if eof {
-                        return Ok(self.emit(HtmlToken::Eof));
-                    }
-                    self.state = TokenizerState::Data;
-                }
             }
         }
     }
