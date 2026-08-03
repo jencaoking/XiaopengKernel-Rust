@@ -135,6 +135,7 @@ impl ElementData {
     }
 
     pub fn set_attribute(&mut self, name: String, value: String) {
+        crate::node::mark_dom_dirty();
         self.attributes.set_named_item(AttrData {
             namespace_uri: None,
             prefix: None,
@@ -148,6 +149,7 @@ impl ElementData {
     }
 
     pub fn remove_attribute(&mut self, name: &str) {
+        crate::node::mark_dom_dirty();
         self.attributes.remove_named_item(name);
     }
 
@@ -156,6 +158,7 @@ impl ElementData {
     }
 
     pub fn set_attribute_ns(&mut self, namespace_uri: Option<String>, prefix: Option<String>, local_name: String, value: String) {
+        crate::node::mark_dom_dirty();
         self.attributes.set_named_item_ns(AttrData {
             namespace_uri,
             prefix,
@@ -169,6 +172,7 @@ impl ElementData {
     }
 
     pub fn remove_attribute_ns(&mut self, namespace_uri: Option<&str>, local_name: &str) {
+        crate::node::mark_dom_dirty();
         self.attributes.remove_named_item_ns(namespace_uri, local_name);
     }
 
@@ -237,6 +241,18 @@ pub enum NodeData {
     Notation(String),
 }
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub static IS_DOM_DIRTY: AtomicBool = AtomicBool::new(false);
+
+pub fn mark_dom_dirty() {
+    IS_DOM_DIRTY.store(true, Ordering::SeqCst);
+}
+
+pub fn take_dom_dirty() -> bool {
+    IS_DOM_DIRTY.swap(false, Ordering::SeqCst)
+}
+
 #[derive(Debug)]
 pub struct Node {
     pub parent: Option<WeakNodePtr>,
@@ -280,6 +296,7 @@ impl Node {
     }
 
     pub fn invalidate_caches(node_ptr: &NodePtr) {
+        crate::node::mark_dom_dirty();
         let mut current = Some(Arc::clone(node_ptr));
         while let Some(n) = current {
             let mut n_write = n.write().unwrap();

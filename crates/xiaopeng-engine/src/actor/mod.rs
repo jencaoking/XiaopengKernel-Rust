@@ -100,32 +100,58 @@ impl EngineActors {
     ) {
         info!("Script Thread started");
         let mut js_runtime = xiaopeng_script::JsRuntime::new().unwrap_or_default();
+        let mut current_root: Option<NodePtr> = None;
+        let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(16));
         
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                ScriptMsg::LoadHtml(html) => {
-                    info!("Script Thread: Parsing HTML");
-                    if let Ok(doc) = xiaopeng_parser::parse_html(&html) {
-                        // init JS
-                        let root_id = xiaopeng_script::bindings::dom::expose_node(Arc::clone(&doc.root));
-                        let _ = js_runtime.eval(&format!("____init_document({});", root_id));
-                        
-                        // Send to layout
-                        let _ = layout_tx.send(LayoutMsg::Compute {
-                            root: doc.root,
-                            width: config.width as f32,
-                            height: config.height as f32,
-                        });
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if xiaopeng_dom::node::take_dom_dirty() {
+                        if let Some(ref root) = current_root {
+                            info!("Script Thread: DOM mutation detected, triggering incremental layout");
+                            let _ = layout_tx.send(LayoutMsg::Compute {
+                                root: Arc::clone(root),
+                                width: config.width as f32,
+                                height: config.height as f32,
+                            });
+                        }
                     }
                 }
-                ScriptMsg::LoadUrl(url) => {
-                    // Similar to load_url in Engine
-                    info!("Script Thread: Loading URL {}", url);
-                }
-                ScriptMsg::Resize(w, h) => {
-                    config.width = w;
-                    config.height = h;
-                    // Trigger a re-layout here if document is retained
+                msg_opt = rx.recv() => {
+                    let Some(msg) = msg_opt else { break; };
+                    match msg {
+                        ScriptMsg::LoadHtml(html) => {
+                            info!("Script Thread: Parsing HTML");
+                            if let Ok(doc) = xiaopeng_parser::parse_html(&html) {
+                                // init JS
+                                let root_id = xiaopeng_script::bindings::dom::expose_node(Arc::clone(&doc.root));
+                                let _ = js_runtime.eval(&format!("____init_document({});", root_id));
+                                
+                                current_root = Some(Arc::clone(&doc.root));
+                                
+                                // Send to layout
+                                let _ = layout_tx.send(LayoutMsg::Compute {
+                                    root: doc.root,
+                                    width: config.width as f32,
+                                    height: config.height as f32,
+                                });
+                            }
+                        }
+                        ScriptMsg::LoadUrl(url) => {
+                            info!("Script Thread: Loading URL {}", url);
+                        }
+                        ScriptMsg::Resize(w, h) => {
+                            config.width = w;
+                            config.height = h;
+                            if let Some(ref root) = current_root {
+                                let _ = layout_tx.send(LayoutMsg::Compute {
+                                    root: Arc::clone(root),
+                                    width: w as f32,
+                                    height: h as f32,
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
