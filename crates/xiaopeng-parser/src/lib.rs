@@ -1,9 +1,7 @@
-//! XiaopengKernel HTML & CSS Parser Module
+//! XiaopengKernel HTML Parser Module
 
-pub mod css;
 pub mod html;
 
-pub use css::{CssRule, StyleSheet};
 pub use html::{HtmlToken, HtmlTokenizer, HtmlTreeBuilder};
 use tracing::{info, instrument};
 use xiaopeng_common::XiaopengResult;
@@ -28,12 +26,7 @@ pub fn parse_html(input: &str) -> XiaopengResult<Document> {
     Ok(tree_builder.document)
 }
 
-#[instrument(skip(input), fields(input_len = input.len()))]
-pub fn parse_css(input: &str) -> XiaopengResult<StyleSheet> {
-    info!("Parsing CSS input");
-    let mut parser = css::parser::CssParser::new(input);
-    Ok(parser.parse_stylesheet())
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -88,11 +81,5 @@ mod tests {
         
         assert_eq!(tag_name, "div");
         assert_eq!(id_value, Some("app".to_string()));
-    }
-
-    #[test]
-    fn test_parse_css() {
-        let res = parse_css("body { color: red; }");
-        assert!(res.is_ok());
     }
 }
