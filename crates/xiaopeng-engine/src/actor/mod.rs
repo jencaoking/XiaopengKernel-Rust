@@ -179,17 +179,9 @@ impl EngineActors {
                             // Here we could call JS dispatchEvent, but for now we just log
                             // In real DOM: node.dispatchEvent(new Event(event_type))
                             // To actually do this in boa:
-                            let mut js_event = xiaopeng_dom::event::Event::new(event_type.clone(), true, true);
+                            let mut rust_event = xiaopeng_dom::event::Event::new(event_type.clone(), true, true);
+                            xiaopeng_dom::Node::dispatch_event(&node, &mut rust_event);
                             
-                            // Note: full event bubbling/capturing logic should be in xiaopeng-script bindings
-                            // We trigger the native rust listeners for now:
-                            let node_read = node.read().unwrap();
-                            if let Some(listeners) = node_read.listeners.get(&event_type) {
-                                for entry in listeners {
-                                    // Trigger callback
-                                    // (Real implementation invokes JS callback via js_runtime)
-                                }
-                            }
                             // Let's invoke JS:
                             let node_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&node));
                             let script = format!("if (window.__dispatch_event) window.__dispatch_event({}, '{}');", node_id, event_type);

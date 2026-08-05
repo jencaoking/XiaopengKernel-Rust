@@ -20,7 +20,7 @@ lazy_static! {
 
 /// Register a node in the global registry and return its unique ID.
 pub fn expose_node(node: NodePtr) -> usize {
-    let id = Arc::as_ptr(&node) as usize;
+    let id: usize = node.0.into();
     JS_NODES.write().unwrap().insert(id, node);
     id
 }
@@ -342,7 +342,7 @@ fn dom_dispatch_event(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
         loop {
             let parent_id = get_node(current_id)
                 .and_then(|n| n.read().unwrap().parent.as_ref().and_then(|w| w.upgrade()))
-                .map(|p| Arc::as_ptr(&p) as usize);
+                .map(|p| p.0.into());
 
             match parent_id {
                 Some(pid) if pid != 0 => {
