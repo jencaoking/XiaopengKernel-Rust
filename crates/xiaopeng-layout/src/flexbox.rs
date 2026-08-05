@@ -54,6 +54,46 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
         style.size.height = Dimension::length(h);
     }
     
+    // Map Flexbox properties
+    style.flex_direction = match lbox.style.flex_direction {
+        xiaopeng_style::computed_style::FlexDirection::Row => FlexDirection::Row,
+        xiaopeng_style::computed_style::FlexDirection::RowReverse => FlexDirection::RowReverse,
+        xiaopeng_style::computed_style::FlexDirection::Column => FlexDirection::Column,
+        xiaopeng_style::computed_style::FlexDirection::ColumnReverse => FlexDirection::ColumnReverse,
+    };
+
+    style.flex_wrap = match lbox.style.flex_wrap {
+        xiaopeng_style::computed_style::FlexWrap::Nowrap => FlexWrap::NoWrap,
+        xiaopeng_style::computed_style::FlexWrap::Wrap => FlexWrap::Wrap,
+        xiaopeng_style::computed_style::FlexWrap::WrapReverse => FlexWrap::WrapReverse,
+    };
+
+    style.justify_content = Some(match lbox.style.justify_content {
+        xiaopeng_style::computed_style::JustifyContent::FlexStart => JustifyContent::FLEX_START,
+        xiaopeng_style::computed_style::JustifyContent::FlexEnd => JustifyContent::FLEX_END,
+        xiaopeng_style::computed_style::JustifyContent::Center => JustifyContent::CENTER,
+        xiaopeng_style::computed_style::JustifyContent::SpaceBetween => JustifyContent::SPACE_BETWEEN,
+        xiaopeng_style::computed_style::JustifyContent::SpaceAround => JustifyContent::SPACE_AROUND,
+        xiaopeng_style::computed_style::JustifyContent::SpaceEvenly => JustifyContent::SPACE_EVENLY,
+    });
+
+    style.align_items = Some(match lbox.style.align_items {
+        xiaopeng_style::computed_style::AlignItems::Stretch => AlignItems::STRETCH,
+        xiaopeng_style::computed_style::AlignItems::FlexStart => AlignItems::FLEX_START,
+        xiaopeng_style::computed_style::AlignItems::FlexEnd => AlignItems::FLEX_END,
+        xiaopeng_style::computed_style::AlignItems::Center => AlignItems::CENTER,
+        xiaopeng_style::computed_style::AlignItems::Baseline => AlignItems::BASELINE,
+    });
+    
+    style.flex_grow = lbox.style.flex_grow;
+    style.flex_shrink = lbox.style.flex_shrink;
+    
+    if let Some(basis) = lbox.style.flex_basis.to_px(0.0) {
+        style.flex_basis = Dimension::length(basis);
+    } else if lbox.style.flex_basis == xiaopeng_style::computed_style::CssLength::Auto {
+        style.flex_basis = Dimension::auto();
+    }
+    
     // Recursively build children
     let mut child_nodes = Vec::new();
     for child in &lbox.children {

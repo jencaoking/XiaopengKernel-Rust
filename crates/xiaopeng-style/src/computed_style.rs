@@ -12,6 +12,44 @@ pub enum Display {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FlexDirection {
+    #[default]
+    Row,
+    RowReverse,
+    Column,
+    ColumnReverse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FlexWrap {
+    #[default]
+    Nowrap,
+    Wrap,
+    WrapReverse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JustifyContent {
+    #[default]
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlignItems {
+    #[default]
+    Stretch,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Position {
     #[default]
     Static,
@@ -87,6 +125,17 @@ pub struct ComputedStyle {
     
     // Typography
     pub font_size: f32, // Font size is usually resolved to px during style resolution
+    
+    // Flexbox Parent Properties
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    
+    // Flexbox Child Properties
+    pub flex_grow: f32,
+    pub flex_shrink: f32,
+    pub flex_basis: CssLength,
 }
 
 impl Default for ComputedStyle {
@@ -121,6 +170,15 @@ impl Default for ComputedStyle {
             
             border_color: Color::TRANSPARENT,
             font_size: 16.0,
+            
+            flex_direction: FlexDirection::default(),
+            flex_wrap: FlexWrap::default(),
+            justify_content: JustifyContent::default(),
+            align_items: AlignItems::default(),
+            
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: CssLength::Auto,
         }
     }
 }
@@ -158,5 +216,6 @@ impl ComputedStyle {
         resolve(&mut self.border_bottom_width);
         resolve(&mut self.border_left_width);
         resolve(&mut self.border_right_width);
+        resolve(&mut self.flex_basis);
     }
 }

@@ -200,6 +200,71 @@ impl<'a> StyleResolver<'a> {
                     style.border_color = c;
                 }
             }
+            "flex-direction" => {
+                use crate::computed_style::FlexDirection;
+                style.flex_direction = match decl.value.as_str() {
+                    "row-reverse" => FlexDirection::RowReverse,
+                    "column" => FlexDirection::Column,
+                    "column-reverse" => FlexDirection::ColumnReverse,
+                    _ => FlexDirection::Row,
+                };
+            }
+            "flex-wrap" => {
+                use crate::computed_style::FlexWrap;
+                style.flex_wrap = match decl.value.as_str() {
+                    "wrap" => FlexWrap::Wrap,
+                    "wrap-reverse" => FlexWrap::WrapReverse,
+                    _ => FlexWrap::Nowrap,
+                };
+            }
+            "justify-content" => {
+                use crate::computed_style::JustifyContent;
+                style.justify_content = match decl.value.as_str() {
+                    "flex-end" => JustifyContent::FlexEnd,
+                    "center" => JustifyContent::Center,
+                    "space-between" => JustifyContent::SpaceBetween,
+                    "space-around" => JustifyContent::SpaceAround,
+                    "space-evenly" => JustifyContent::SpaceEvenly,
+                    _ => JustifyContent::FlexStart,
+                };
+            }
+            "align-items" => {
+                use crate::computed_style::AlignItems;
+                style.align_items = match decl.value.as_str() {
+                    "flex-start" => AlignItems::FlexStart,
+                    "flex-end" => AlignItems::FlexEnd,
+                    "center" => AlignItems::Center,
+                    "baseline" => AlignItems::Baseline,
+                    _ => AlignItems::Stretch,
+                };
+            }
+            "flex-grow" => {
+                if let Ok(v) = decl.value.parse::<f32>() {
+                    style.flex_grow = v;
+                }
+            }
+            "flex-shrink" => {
+                if let Ok(v) = decl.value.parse::<f32>() {
+                    style.flex_shrink = v;
+                }
+            }
+            "flex-basis" => {
+                if let Some(v) = parse_length(&decl.value) {
+                    style.flex_basis = v;
+                }
+            }
+            "flex" => {
+                // Shorthand for flex: flex-grow flex-shrink flex-basis
+                // For simplicity, just handle a single number as flex-grow: e.g. `flex: 1`
+                let parts: Vec<&str> = decl.value.split_whitespace().collect();
+                if let Some(p1) = parts.get(0) {
+                    if let Ok(v) = p1.parse::<f32>() {
+                        style.flex_grow = v;
+                        style.flex_shrink = 1.0;
+                        style.flex_basis = crate::computed_style::CssLength::Px(0.0);
+                    }
+                }
+            }
             _ => {}
         }
     }
