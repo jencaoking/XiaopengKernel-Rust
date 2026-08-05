@@ -303,8 +303,8 @@ impl NetClient {
         }
     }
     
-    pub async fn fetch_stream(&self, req: Request) -> XiaopengResult<StreamResponse> {
-        self.check_security_policy(&mut req.clone())?;
+    pub async fn fetch_stream(&self, mut req: Request) -> XiaopengResult<StreamResponse> {
+        self.check_security_policy(&mut req)?;
 
         match self.protocol_hint {
             ProtocolHint::Http1 => http1::send_stream(&req, &self.h1_pool).await,
