@@ -94,6 +94,50 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
         style.flex_basis = Dimension::auto();
     }
     
+    // Map Grid properties
+    use xiaopeng_style::computed_style::GridTrackSize;
+    
+    let map_track = |t: &GridTrackSize| {
+        match t {
+            GridTrackSize::Auto => taffy::style_helpers::auto(),
+            GridTrackSize::Fraction(v) => taffy::style_helpers::fr(*v),
+            GridTrackSize::Length(l) => {
+                if let Some(px) = l.to_px(0.0) {
+                    taffy::style_helpers::length(px)
+                } else {
+                    taffy::style_helpers::auto() // fallback
+                }
+            }
+        }
+    };
+
+    if !lbox.style.grid_template_columns.is_empty() {
+        style.grid_template_columns = lbox.style.grid_template_columns.iter().map(map_track).collect();
+    }
+    if !lbox.style.grid_template_rows.is_empty() {
+        style.grid_template_rows = lbox.style.grid_template_rows.iter().map(map_track).collect();
+    }
+    
+    if let Some(start) = lbox.style.grid_column_start {
+        style.grid_column.start = taffy::style::GridPlacement::from_line_index(start as i16);
+    }
+    if let Some(end) = lbox.style.grid_column_end {
+        style.grid_column.end = taffy::style::GridPlacement::from_line_index(end as i16);
+    }
+    if let Some(start) = lbox.style.grid_row_start {
+        style.grid_row.start = taffy::style::GridPlacement::from_line_index(start as i16);
+    }
+    if let Some(end) = lbox.style.grid_row_end {
+        style.grid_row.end = taffy::style::GridPlacement::from_line_index(end as i16);
+    }
+    
+    if let Some(gap_px) = lbox.style.gap.to_px(0.0) {
+        style.gap = taffy::geometry::Size {
+            width: taffy::style::LengthPercentage::length(gap_px),
+            height: taffy::style::LengthPercentage::length(gap_px),
+        };
+    }
+    
     // Recursively build children
     let mut child_nodes = Vec::new();
     for child in &lbox.children {

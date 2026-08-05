@@ -88,6 +88,19 @@ impl CssLength {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GridTrackSize {
+    Auto,
+    Length(CssLength),
+    Fraction(f32),
+}
+
+impl Default for GridTrackSize {
+    fn default() -> Self {
+        GridTrackSize::Auto
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ComputedStyle {
     pub display: Display,
@@ -136,6 +149,15 @@ pub struct ComputedStyle {
     pub flex_grow: f32,
     pub flex_shrink: f32,
     pub flex_basis: CssLength,
+    
+    // Grid Properties
+    pub grid_template_columns: Vec<GridTrackSize>,
+    pub grid_template_rows: Vec<GridTrackSize>,
+    pub grid_column_start: Option<i32>,
+    pub grid_column_end: Option<i32>,
+    pub grid_row_start: Option<i32>,
+    pub grid_row_end: Option<i32>,
+    pub gap: CssLength,
 }
 
 impl Default for ComputedStyle {
@@ -179,6 +201,14 @@ impl Default for ComputedStyle {
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: CssLength::Auto,
+            
+            grid_template_columns: Vec::new(),
+            grid_template_rows: Vec::new(),
+            grid_column_start: None,
+            grid_column_end: None,
+            grid_row_start: None,
+            grid_row_end: None,
+            gap: CssLength::Px(0.0),
         }
     }
 }
@@ -217,5 +247,17 @@ impl ComputedStyle {
         resolve(&mut self.border_left_width);
         resolve(&mut self.border_right_width);
         resolve(&mut self.flex_basis);
+        resolve(&mut self.gap);
+        
+        for track in &mut self.grid_template_columns {
+            if let GridTrackSize::Length(ref mut l) = track {
+                resolve(l);
+            }
+        }
+        for track in &mut self.grid_template_rows {
+            if let GridTrackSize::Length(ref mut l) = track {
+                resolve(l);
+            }
+        }
     }
 }

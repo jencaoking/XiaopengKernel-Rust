@@ -265,9 +265,49 @@ impl<'a> StyleResolver<'a> {
                     }
                 }
             }
+            "grid-template-columns" => {
+                style.grid_template_columns = parse_grid_tracks(&decl.value);
+            }
+            "grid-template-rows" => {
+                style.grid_template_rows = parse_grid_tracks(&decl.value);
+            }
+            "grid-column-start" => { if let Ok(v) = decl.value.parse::<i32>() { style.grid_column_start = Some(v); } }
+            "grid-column-end" => { if let Ok(v) = decl.value.parse::<i32>() { style.grid_column_end = Some(v); } }
+            "grid-row-start" => { if let Ok(v) = decl.value.parse::<i32>() { style.grid_row_start = Some(v); } }
+            "grid-row-end" => { if let Ok(v) = decl.value.parse::<i32>() { style.grid_row_end = Some(v); } }
+            "grid-column" => {
+                let parts: Vec<&str> = decl.value.split('/').collect();
+                if parts.len() > 0 { if let Ok(v) = parts[0].trim().parse::<i32>() { style.grid_column_start = Some(v); } }
+                if parts.len() > 1 { if let Ok(v) = parts[1].trim().parse::<i32>() { style.grid_column_end = Some(v); } }
+            }
+            "grid-row" => {
+                let parts: Vec<&str> = decl.value.split('/').collect();
+                if parts.len() > 0 { if let Ok(v) = parts[0].trim().parse::<i32>() { style.grid_row_start = Some(v); } }
+                if parts.len() > 1 { if let Ok(v) = parts[1].trim().parse::<i32>() { style.grid_row_end = Some(v); } }
+            }
+            "gap" => {
+                if let Some(v) = parse_length(&decl.value) { style.gap = v; }
+            }
             _ => {}
         }
     }
+}
+
+fn parse_grid_tracks(val: &str) -> Vec<crate::computed_style::GridTrackSize> {
+    use crate::computed_style::GridTrackSize;
+    let mut tracks = Vec::new();
+    for part in val.split_whitespace() {
+        if part == "auto" {
+            tracks.push(GridTrackSize::Auto);
+        } else if part.ends_with("fr") {
+            if let Ok(v) = part.trim_end_matches("fr").parse::<f32>() {
+                tracks.push(GridTrackSize::Fraction(v));
+            }
+        } else if let Some(len) = parse_length(part) {
+            tracks.push(GridTrackSize::Length(len));
+        }
+    }
+    tracks
 }
 
 fn parse_length(val: &str) -> Option<crate::computed_style::CssLength> {
