@@ -13,11 +13,12 @@ pub enum DisplayCommand {
 #[derive(Debug, Default, Clone)]
 pub struct DisplayList {
     pub commands: Vec<DisplayCommand>,
+    pub damage_rect: Option<Rect>,
 }
 
 impl DisplayList {
     pub fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self { commands: Vec::new(), damage_rect: None }
     }
 
     pub fn build(root: &LayoutBox) -> Self {

@@ -166,6 +166,18 @@ impl WgpuRenderer {
             }
         }
         
+        let has_damage = display_list.damage_rect.is_some();
+        let load_op = if has_damage {
+            wgpu::LoadOp::Load
+        } else {
+            wgpu::LoadOp::Clear(wgpu::Color {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            })
+        };
+        
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -173,12 +185,7 @@ impl WgpuRenderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            a: 1.0,
-                        }),
+                        load: load_op,
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -188,6 +195,23 @@ impl WgpuRenderer {
                 timestamp_writes: None,
                 multiview_mask: std::num::NonZero::new(0),
             });
+            
+            if let Some(rect) = display_list.damage_rect {
+                let sc_x = (rect.x.max(0.0)) as u32;
+                let sc_y = (rect.y.max(0.0)) as u32;
+                let sc_w = (rect.width.max(0.0)) as u32;
+                let sc_h = (rect.height.max(0.0)) as u32;
+                
+                // Clamp to window bounds to avoid panics
+                let sc_x = sc_x.min(width as u32);
+                let sc_y = sc_y.min(height as u32);
+                let sc_w = sc_w.min(width as u32 - sc_x);
+                let sc_h = sc_h.min(height as u32 - sc_y);
+                
+                if sc_w > 0 && sc_h > 0 {
+                    render_pass.set_scissor_rect(sc_x, sc_y, sc_w, sc_h);
+                }
+            }
             
             if !vertices.is_empty() {
                 let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
