@@ -1,12 +1,14 @@
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::info;
 use std::sync::Arc;
+use futures::future::BoxFuture;
 
 pub mod app;
 pub use app::ConstellationApp;
 
 use xiaopeng_dom::NodePtr;
 use xiaopeng_renderer::DisplayList;
+use xiaopeng_style::parser::StyleSheet;
 
 /// Messages sent to the Script Thread (DOM + JS)
 #[derive(Debug)]
@@ -24,6 +26,7 @@ pub enum LayoutMsg {
         root: NodePtr,
         width: f32,
         height: f32,
+        stylesheet: Arc<StyleSheet>,
     },
     HitTest {
         x: f32,
@@ -58,6 +61,7 @@ impl EngineActors {
                 root: doc.root,
                 width: config.width as f32,
                 height: config.height as f32,
+                stylesheet: Arc::new(StyleSheet::default()), // Default for now
             });
         }
 
@@ -133,10 +137,14 @@ impl EngineActors {
                                 let root_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&doc.root));
                                 let _ = js_runtime.eval(&format!("____init_document({});", root_id));
                                 current_root = Some(NodePtr::clone_ptr(&doc.root));
+                                
+                                let sheet = collect_stylesheets(&doc.root, "http://localhost", &net_client).await;
+                                
                                 let _ = layout_tx.send(LayoutMsg::Compute {
                                     root: doc.root,
                                     width: config.width as f32,
                                     height: config.height as f32,
+                                    stylesheet: Arc::new(sheet),
                                 });
                             }
                         }
@@ -151,10 +159,14 @@ impl EngineActors {
                                         let root_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&doc.root));
                                         let _ = js_runtime.eval(&format!("____init_document({});", root_id));
                                         current_root = Some(NodePtr::clone_ptr(&doc.root));
+                                        
+                                        let sheet = collect_stylesheets(&doc.root, &url, &net_client).await;
+                                        
                                         let _ = layout_tx.send(LayoutMsg::Compute {
                                             root: doc.root,
                                             width: config.width as f32,
                                             height: config.height as f32,
+                                            stylesheet: Arc::new(sheet),
                                         });
                                     }
                                 }
@@ -171,6 +183,7 @@ impl EngineActors {
                                     root: NodePtr::clone_ptr(root),
                                     width: w as f32,
                                     height: h as f32,
+                                    stylesheet: Arc::new(StyleSheet::default()), // Will fix this later
                                 });
                             }
                         }
@@ -200,10 +213,10 @@ impl EngineActors {
         // We use blocking recv since this is a dedicated std::thread
         while let Some(msg) = rx.blocking_recv() {
             match msg {
-                LayoutMsg::Compute { root, width, height } => {
+                LayoutMsg::Compute { root, width, height, stylesheet } => {
                     info!("Layout Thread: Computing layout ({}x{})", width, height);
                     if let Ok(()) = xiaopeng_style::init_style() {
-                        if let Ok(layout_root) = xiaopeng_layout::compute_layout(&root, width, height) {
+                        if let Ok(layout_root) = xiaopeng_layout::compute_layout(&root, width, height, &stylesheet) {
                             let display_list = xiaopeng_renderer::DisplayList::build(&layout_root);
                             let _ = render_tx.send(RenderMsg::Render(display_list));
                             latest_layout_tree = Some(layout_root);
@@ -252,4 +265,49 @@ impl EngineActors {
             }
         }
     }
+}
+
+async fn collect_stylesheets(root: &NodePtr, base_url: &str, net_client: &xiaopeng_net::NetClient) -> StyleSheet {
+    let mut sheet = StyleSheet::default();
+    
+    // We can do a BFS or DFS on the DOM
+    let mut stack = vec![NodePtr::clone_ptr(root)];
+    while let Some(node) = stack.pop() {
+        let node_ref = node.read().unwrap();
+        if let xiaopeng_dom::NodeData::Element(el) = &node_ref.data {
+            if el.tag_name == "style" {
+                // Collect inner text
+                let mut text = String::new();
+                for child in &node_ref.children {
+                    let c_ref = child.read().unwrap();
+                    if let xiaopeng_dom::NodeData::Text(t) = &c_ref.data {
+                        text.push_str(t);
+                    }
+                }
+                let mut parser = xiaopeng_style::parser::CssParser::new(&text);
+                let parsed = parser.parse();
+                sheet.rules.extend(parsed.rules);
+            } else if el.tag_name == "link" {
+                let rel = el.attributes.get_named_item("rel").map(|a| a.value.clone()).unwrap_or_default();
+                if rel == "stylesheet" {
+                    if let Some(href) = el.attributes.get_named_item("href").map(|a| a.value.clone()) {
+                        // resolve href relative to base_url
+                        let absolute_url = if href.starts_with("http") { href } else { format!("{}/{}", base_url.trim_end_matches('/'), href.trim_start_matches('/')) };
+                        if let Ok(res) = net_client.fetch(xiaopeng_net::Request::new("GET", &absolute_url)).await {
+                            let css_text = String::from_utf8_lossy(&res.body).to_string();
+                            let mut parser = xiaopeng_style::parser::CssParser::new(&css_text);
+                            let parsed = parser.parse();
+                            sheet.rules.extend(parsed.rules);
+                        }
+                    }
+                }
+            }
+        }
+        
+        let mut children = node_ref.children.clone();
+        children.reverse(); // to visit in source order (DFS)
+        stack.extend(children);
+    }
+    
+    sheet
 }

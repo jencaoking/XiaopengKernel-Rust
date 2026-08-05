@@ -39,7 +39,20 @@ impl<'a> StyleResolver<'a> {
             }
         }
 
-        // Sort rules by specificity, then by source order
+        matched_rules
+    }
+
+    pub fn get_matched_rules(&self, node: &NodePtr) -> Vec<(&'a crate::parser::Rule, u32, usize)> {
+        let mut matched_rules = Vec::new();
+
+        for (rule_idx, rule) in self.stylesheet.rules.iter().enumerate() {
+            for selector in &rule.selectors {
+                if crate::query::matches_selector(node, selector) {
+                    matched_rules.push((rule, selector.specificity(), rule_idx));
+                }
+            }
+        }
+
         matched_rules.sort_by(|a, b| {
             if a.1 == b.1 {
                 a.2.cmp(&b.2)
@@ -47,8 +60,11 @@ impl<'a> StyleResolver<'a> {
                 a.1.cmp(&b.1)
             }
         });
+        
+        matched_rules
+    }
 
-        // Apply normal declarations
+    // Apply normal declarations
         for (rule, _, _) in &matched_rules {
             for decl in &rule.declarations {
                 if !decl.important {
@@ -72,8 +88,8 @@ impl<'a> StyleResolver<'a> {
 
 
 
-    pub fn apply_declaration_pub(&self, style: &mut ComputedStyle, decl: &Declaration) {
-        self.apply_declaration(style, decl, 16.0, 16.0, 800.0, 600.0);
+    pub fn apply_declaration_pub(&self, style: &mut ComputedStyle, decl: &Declaration, parent_font_size: f32, root_font_size: f32, viewport_width: f32, viewport_height: f32) {
+        self.apply_declaration(style, decl, parent_font_size, root_font_size, viewport_width, viewport_height);
     }
 
     fn apply_declaration(

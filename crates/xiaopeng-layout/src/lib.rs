@@ -18,14 +18,15 @@ pub mod builder;
 pub use builder::build_layout_tree;
 
 pub fn compute_layout(
-    document_node: &NodePtr,
+    root: &NodePtr,
     viewport_width: f32,
     viewport_height: f32,
+    stylesheet: &xiaopeng_style::parser::StyleSheet,
 ) -> XiaopengResult<LayoutBox> {
-    info!("Computing layout for viewport {}x{}", viewport_width, viewport_height);
+    info!("Starting layout computation");
     
-    // 1. Build layout tree from DOM
-    let mut root_box = build_layout_tree(document_node, None, 16.0, viewport_width, viewport_height)
+    // 1. Build the Layout Tree (resolving styles)
+    let mut root_box = crate::builder::build_layout_tree(root, None, 16.0, viewport_width, viewport_height, stylesheet)
         .ok_or_else(|| xiaopeng_common::XiaopengError::LayoutError { component: "Builder".into(), message: "Failed to build layout tree".into() })?;
         
     // 2. Perform layout passes (starting with block layout on root)

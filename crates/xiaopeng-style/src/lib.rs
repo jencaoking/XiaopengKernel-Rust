@@ -28,6 +28,7 @@ pub fn resolve_style(
     root_font_size: f32,
     viewport_width: f32,
     viewport_height: f32,
+    stylesheet: &crate::parser::StyleSheet,
 ) -> ComputedStyle {
     use computed_style::{CssLength, Display};
 
@@ -85,6 +86,41 @@ pub fn resolve_style(
         _ => {}
     }
 
+    // --- 2. Evaluate CSS Cascading Rules using StyleResolver ---
+    let resolver = StyleResolver::new(stylesheet);
+    let mut resolved_style = resolver.resolve_style(node, parent_style, root_font_size, viewport_width, viewport_height);
+    
+    // Merge UA default styling with resolved cascading styling.
+    // In a real browser, UA stylesheet is just another stylesheet with lower specificity.
+    // Here we manually merge them for simplicity: if resolved_style has default values, use UA values.
+    // But an easier way is to just apply the resolved_style OVER our UA style base we just created.
+    
+    // Since `StyleResolver::resolve_style` starts from `ComputedStyle::default()`, 
+    // it overwrites things if they exist in the CSS. 
+    // Wait, the correct way is to have the StyleResolver mutate our base `style`!
+    // But `resolve_style` returns a new ComputedStyle. Let's just do an apply-all for now by using a modified method, 
+    // or we can just apply matched rules manually here.
+    
+    // Let's refactor `resolve_style` to actually use `resolver.apply_matched_rules(&mut style, ...)` 
+    // Actually `resolver.resolve_style` is already there. Let's just let it return the base style, and we copy overrides.
+    // But wait, the easiest way is to re-implement the cascading loop here or in Resolver.
+    // Let's just do:
+    let matched_rules = resolver.get_matched_rules(node);
+    for (rule, _, _) in &matched_rules {
+        for decl in &rule.declarations {
+            if !decl.important {
+                resolver.apply_declaration_pub(&mut style, decl, parent_style.map_or(16.0, |p| p.font_size), root_font_size, viewport_width, viewport_height);
+            }
+        }
+    }
+    for (rule, _, _) in &matched_rules {
+        for decl in &rule.declarations {
+            if decl.important {
+                resolver.apply_declaration_pub(&mut style, decl, parent_style.map_or(16.0, |p| p.font_size), root_font_size, viewport_width, viewport_height);
+            }
+        }
+    }
+
     // --- 2. Parse inline style="" attribute ---
     let inline_css = el.attributes.get_named_item("style").map(|a| a.value.clone());
     drop(n); // release read lock before calling parser
@@ -96,7 +132,7 @@ pub fn resolve_style(
         if let Some(rule) = sheet.rules.first() {
             let resolver = StyleResolver::new(&sheet);
             for decl in &rule.declarations {
-                resolver.apply_declaration_pub(&mut style, decl);
+                resolver.apply_declaration_pub(&mut style, decl, parent_style.map_or(16.0, |p| p.font_size), root_font_size, viewport_width, viewport_height);
             }
         }
     }

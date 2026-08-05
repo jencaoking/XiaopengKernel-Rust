@@ -10,6 +10,7 @@ pub fn build_layout_tree(
     root_font_size: f32,
     viewport_width: f32,
     viewport_height: f32,
+    stylesheet: &xiaopeng_style::parser::StyleSheet,
 ) -> Option<LayoutBox> {
     let node_ref = node.read().unwrap();
     
@@ -18,7 +19,7 @@ pub fn build_layout_tree(
         drop(node_ref);
         let mut root_box = LayoutBox::new(ComputedStyle::default(), BoxType::BlockNode, Some(node.clone()));
         for child in &children {
-            if let Some(child_box) = build_layout_tree(child, parent_style, root_font_size, viewport_width, viewport_height) {
+            if let Some(child_box) = build_layout_tree(child, parent_style, root_font_size, viewport_width, viewport_height, stylesheet) {
                 root_box.children.push(child_box);
             }
         }
@@ -47,7 +48,8 @@ pub fn build_layout_tree(
         parent_style, 
         root_font_size, 
         viewport_width, 
-        viewport_height
+        viewport_height,
+        stylesheet,
     );
     
     // For children, if this node is HTML, update root_font_size
@@ -65,7 +67,7 @@ pub fn build_layout_tree(
     let mut layout_box = LayoutBox::new(style.clone(), box_type, Some(node.clone()));
     
     for child in &children {
-        if let Some(child_box) = build_layout_tree(child, Some(&style), current_root_font_size, viewport_width, viewport_height) {
+        if let Some(child_box) = build_layout_tree(child, Some(&style), current_root_font_size, viewport_width, viewport_height, stylesheet) {
             layout_box.children.push(child_box);
         }
     }
