@@ -5,8 +5,17 @@ use swash::scale::{ScaleContext, Render};
 use swash::scale::image::Image;
 use swash::FontRef;
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 pub struct FontManager {
     font_data: Vec<u8>,
+    scaler_cache: Mutex<ScaleCache>,
+}
+
+struct ScaleCache {
+    context: ScaleContext,
+    glyph_cache: HashMap<(u16, u32), Image>,
 }
 
 pub struct ShapedText {
@@ -26,7 +35,13 @@ pub struct ShapedGlyph {
 
 impl FontManager {
     pub fn new(font_data: Vec<u8>) -> Self {
-        Self { font_data }
+        Self { 
+            font_data,
+            scaler_cache: Mutex::new(ScaleCache {
+                context: ScaleContext::new(),
+                glyph_cache: HashMap::new(),
+            }),
+        }
     }
 
     /// Shapes text into glyphs using rustybuzz.
@@ -67,7 +82,6 @@ impl FontManager {
             max_y_advance = max_y_advance.max(y_adv);
         }
         
-        // Use a generic height if no vertical advance is present (common in horizontal layouts)
         let height = if max_y_advance > 0.0 { max_y_advance } else { font_size };
 
         Ok(ShapedText {
@@ -77,22 +91,31 @@ impl FontManager {
         })
     }
 
-    /// Rasterizes a glyph ID into an image using swash.
+    /// Rasterizes a glyph ID into an image using swash, with caching.
     pub fn rasterize_glyph(&self, glyph_id: u16, font_size: f32) -> Result<Image, String> {
+        let cache_key = (glyph_id, font_size.to_bits());
+        
+        let mut cache = self.scaler_cache.lock().unwrap();
+        if let Some(img) = cache.glyph_cache.get(&cache_key) {
+            return Ok(img.clone());
+        }
+
         let font = FontRef::from_index(&self.font_data, 0).ok_or("Failed to load swash font")?;
         
-        let mut context = ScaleContext::new();
-        let mut scaler = context
+        let mut scaler = cache.context
             .builder(font)
             .size(font_size)
             .hint(true)
             .build();
             
-        Render::new(&[
+        let img = Render::new(&[
             swash::scale::Source::ColorOutline(0),
             swash::scale::Source::Outline,
         ])
         .render(&mut scaler, glyph_id)
-        .ok_or_else(|| "Failed to rasterize glyph".to_string())
+        .ok_or_else(|| "Failed to rasterize glyph".to_string())?;
+        
+        cache.glyph_cache.insert(cache_key, img.clone());
+        Ok(img)
     }
 }
