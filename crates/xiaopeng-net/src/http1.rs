@@ -310,10 +310,12 @@ pub async fn send_stream(req: &Request, pool: &H1PoolType) -> XiaopengResult<Str
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(XiaopengError::NetworkError {
+                    if let Err(send_err) = tx.send(Err(XiaopengError::NetworkError {
                         url: url_clone.clone(),
                         message: format!("read body frame: {e}"),
-                    })).await;
+                    })).await {
+                        tracing::error!("Failed to send network error frame: {:?}", send_err);
+                    }
                     break;
                 }
             }

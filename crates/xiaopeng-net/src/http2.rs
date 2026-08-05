@@ -158,7 +158,9 @@ pub async fn send_stream(req: &Request, pool: &H2PoolType) -> XiaopengResult<Str
     let (tx, rx) = tokio::sync::mpsc::channel(1);
     let body = resp.body.clone();
     tokio::spawn(async move {
-        let _ = tx.send(Ok(body)).await;
+        if let Err(e) = tx.send(Ok(body)).await {
+            tracing::error!("Failed to send HTTP/2 stream body: {}", e);
+        }
     });
     Ok(StreamResponse {
         status: resp.status,

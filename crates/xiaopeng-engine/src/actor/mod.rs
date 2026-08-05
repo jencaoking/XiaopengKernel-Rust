@@ -57,12 +57,14 @@ impl EngineActors {
         // If we already have a parsed document from the single-threaded pre-load, kickstart the pipeline
         if let Some(doc) = initial_doc {
             info!("Constellation: Kickstarting actor pipeline with pre-loaded Document");
-            let _ = layout_tx.send(LayoutMsg::Compute {
+            if let Err(e) = layout_tx.send(LayoutMsg::Compute {
                 root: doc.root,
                 width: config.width as f32,
                 height: config.height as f32,
                 stylesheet: Arc::new(StyleSheet::default()), // Default for now
-            });
+            }) {
+                tracing::error!("Failed to send initial LayoutMsg::Compute: {}", e);
+            }
         }
 
         // Spawn Layout Thread
@@ -120,11 +122,13 @@ impl EngineActors {
                     if xiaopeng_dom::node::take_dom_dirty() {
                         if let Some(ref root) = current_root {
                             info!("Script Thread: DOM mutation detected, triggering incremental layout");
-                            let _ = layout_tx.send(LayoutMsg::Compute {
+                            if let Err(e) = layout_tx.send(LayoutMsg::Compute {
                                 root: NodePtr::clone_ptr(root),
                                 width: config.width as f32,
                                 height: config.height as f32,
-                            });
+                            }) {
+                                tracing::error!("Failed to send LayoutMsg::Compute on mutation: {}", e);
+                            }
                         }
                     }
                 }
@@ -135,17 +139,21 @@ impl EngineActors {
                             info!("Script Thread: Parsing HTML");
                             if let Ok(doc) = xiaopeng_parser::parse_html(&html) {
                                 let root_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&doc.root));
-                                let _ = js_runtime.eval(&format!("____init_document({});", root_id));
+                                if let Err(e) = js_runtime.eval(&format!("____init_document({});", root_id)) {
+                                    tracing::error!("Failed to eval ____init_document: {:?}", e);
+                                }
                                 current_root = Some(NodePtr::clone_ptr(&doc.root));
                                 
                                 let sheet = collect_stylesheets(&doc.root, "http://localhost", &net_client).await;
                                 
-                                let _ = layout_tx.send(LayoutMsg::Compute {
+                                if let Err(e) = layout_tx.send(LayoutMsg::Compute {
                                     root: doc.root,
                                     width: config.width as f32,
                                     height: config.height as f32,
                                     stylesheet: Arc::new(sheet),
-                                });
+                                }) {
+                                    tracing::error!("Failed to send LayoutMsg::Compute for LoadHtml: {}", e);
+                                }
                             }
                         }
                         ScriptMsg::LoadUrl(url) => {
@@ -157,17 +165,21 @@ impl EngineActors {
                                     info!("Script Thread: URL Fetched ({} bytes). Parsing HTML...", html.len());
                                     if let Ok(doc) = xiaopeng_parser::parse_html(&html) {
                                         let root_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&doc.root));
-                                        let _ = js_runtime.eval(&format!("____init_document({});", root_id));
+                                        if let Err(e) = js_runtime.eval(&format!("____init_document({});", root_id)) {
+                                            tracing::error!("Failed to eval ____init_document: {:?}", e);
+                                        }
                                         current_root = Some(NodePtr::clone_ptr(&doc.root));
                                         
                                         let sheet = collect_stylesheets(&doc.root, &url, &net_client).await;
                                         
-                                        let _ = layout_tx.send(LayoutMsg::Compute {
+                                        if let Err(e) = layout_tx.send(LayoutMsg::Compute {
                                             root: doc.root,
                                             width: config.width as f32,
                                             height: config.height as f32,
                                             stylesheet: Arc::new(sheet),
-                                        });
+                                        }) {
+                                            tracing::error!("Failed to send LayoutMsg::Compute for LoadUrl: {}", e);
+                                        }
                                     }
                                 }
                                 Err(e) => {
@@ -179,12 +191,14 @@ impl EngineActors {
                             config.width = w;
                             config.height = h;
                             if let Some(ref root) = current_root {
-                                let _ = layout_tx.send(LayoutMsg::Compute {
+                                if let Err(e) = layout_tx.send(LayoutMsg::Compute {
                                     root: NodePtr::clone_ptr(root),
                                     width: w as f32,
                                     height: h as f32,
                                     stylesheet: Arc::new(StyleSheet::default()), // Will fix this later
-                                });
+                                }) {
+                                    tracing::error!("Failed to send LayoutMsg::Compute on Resize: {}", e);
+                                }
                             }
                         }
                         ScriptMsg::DispatchEvent(node, event_type) => {
@@ -198,7 +212,9 @@ impl EngineActors {
                             // Let's invoke JS:
                             let node_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&node));
                             let script = format!("if (window.__dispatch_event) window.__dispatch_event({}, '{}');", node_id, event_type);
-                            let _ = js_runtime.eval(&script);
+                            if let Err(e) = js_runtime.eval(&script) {
+                                tracing::error!("Failed to eval __dispatch_event: {:?}", e);
+                            }
                         }
                     }
                 }
@@ -218,7 +234,9 @@ impl EngineActors {
                     if let Ok(()) = xiaopeng_style::init_style() {
                         if let Ok(layout_root) = xiaopeng_layout::compute_layout(&root, width, height, &stylesheet) {
                             let display_list = xiaopeng_renderer::DisplayList::build(&layout_root);
-                            let _ = render_tx.send(RenderMsg::Render(display_list));
+                            if let Err(e) = render_tx.send(RenderMsg::Render(display_list)) {
+                                tracing::error!("Failed to send RenderMsg: {}", e);
+                            }
                             latest_layout_tree = Some(layout_root);
                         }
                     }
@@ -227,7 +245,9 @@ impl EngineActors {
                     if let Some(ref layout_root) = latest_layout_tree {
                         if let Some(hit_node) = xiaopeng_layout::hit_test(layout_root, x, y) {
                             info!("Layout Thread: Hit test found node for ({}, {})", x, y);
-                            let _ = script_tx.send(ScriptMsg::DispatchEvent(hit_node, event_type));
+                            if let Err(e) = script_tx.send(ScriptMsg::DispatchEvent(hit_node, event_type)) {
+                                tracing::error!("Failed to send ScriptMsg::DispatchEvent: {}", e);
+                            }
                         } else {
                             info!("Layout Thread: Hit test found nothing for ({}, {})", x, y);
                         }
@@ -254,9 +274,13 @@ impl EngineActors {
                             if let Some(path) = &config.headless_output {
                                 info!("Exporting headless result to {}", path);
                                 if path.ends_with(".ppm") {
-                                    let _ = canvas.export_ppm(path);
+                                    if let Err(e) = canvas.export_ppm(path) {
+                                        tracing::error!("Failed to export PPM to {}: {:?}", path, e);
+                                    }
                                 } else {
-                                    let _ = canvas.export_png(path);
+                                    if let Err(e) = canvas.export_png(path) {
+                                        tracing::error!("Failed to export PNG to {}: {:?}", path, e);
+                                    }
                                 }
                             }
                         }

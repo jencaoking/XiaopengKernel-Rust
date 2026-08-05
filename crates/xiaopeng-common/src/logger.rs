@@ -35,7 +35,9 @@ pub fn init_logging_with_config(config: LoggerConfig) {
         .with_line_number(config.show_line_numbers)
         .with_ansi(config.enable_ansi);
 
-    let _ = builder.try_init();
+    if let Err(e) = builder.try_init() {
+        eprintln!("Failed to initialize logger: {}", e);
+    }
 }
 
 /// Initialize tracing subscriber with default configuration

@@ -552,7 +552,9 @@ impl HtmlTreeBuilder {
             
             let (target, before) = self.appropriate_place_for_inserting_node(None);
             if let Some(b) = before {
-                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+                if let Err(e) = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b) {
+                    tracing::error!("Failed to insert_before_node in foster parenting: {}", e);
+                }
             } else {
                 xiaopeng_dom::Node::append_child(&target, &new_node);
             }
@@ -610,7 +612,9 @@ impl HtmlTreeBuilder {
         if !appended {
             let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Text(text.to_string()));
             if let Some(b) = before {
-                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+                if let Err(e) = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b) {
+                    tracing::error!("Failed to insert_before_node (text): {}", e);
+                }
             } else {
                 xiaopeng_dom::Node::append_child(&target, &new_node);
             }
@@ -622,7 +626,9 @@ impl HtmlTreeBuilder {
             let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::Comment(data.clone()));
             let (target, before) = self.appropriate_place_for_inserting_node(None);
             if let Some(b) = before {
-                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+                if let Err(e) = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b) {
+                    tracing::error!("Failed to insert_before_node (comment): {}", e);
+                }
             } else {
                 xiaopeng_dom::Node::append_child(&target, &new_node);
             }
@@ -633,7 +639,9 @@ impl HtmlTreeBuilder {
         let new_node = xiaopeng_dom::Node::new(xiaopeng_dom::NodeData::CDataSection(data.to_string()));
         let (target, before) = self.appropriate_place_for_inserting_node(None);
         if let Some(b) = before {
-            let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+            if let Err(e) = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b) {
+                tracing::error!("Failed to insert_before_node (element): {}", e);
+            }
         } else {
             xiaopeng_dom::Node::append_child(&target, &new_node);
         }
@@ -750,7 +758,9 @@ impl HtmlTreeBuilder {
             
             let (target, before) = self.appropriate_place_for_inserting_node(None);
             if let Some(b) = before {
-                let _ = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b);
+                if let Err(e) = xiaopeng_dom::Node::insert_before_node(&target, &new_node, &b) {
+                    tracing::error!("Failed to insert_before_node (reconstruct formatting): {}", e);
+                }
             } else {
                 xiaopeng_dom::Node::append_child(&target, &new_node);
             }

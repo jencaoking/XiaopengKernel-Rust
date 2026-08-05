@@ -81,7 +81,9 @@ impl ApplicationHandler for ConstellationApp {
             }
             WindowEvent::Resized(size) => {
                 info!("Constellation: Resized to {}x{}", size.width, size.height);
-                let _ = self.actors.script_tx.send(ScriptMsg::Resize(size.width, size.height));
+                if let Err(e) = self.actors.script_tx.send(ScriptMsg::Resize(size.width, size.height)) {
+                    tracing::error!("Failed to send ScriptMsg::Resize: {}", e);
+                }
                 if let Some(renderer) = &mut self.renderer {
                     renderer.resize(size.width, size.height);
                 }
@@ -112,12 +114,14 @@ impl ApplicationHandler for ConstellationApp {
             }
             WindowEvent::MouseInput { state: winit::event::ElementState::Released, button: winit::event::MouseButton::Left, .. } => {
                 info!("Constellation: Mouse click at {:?}", self.cursor_pos);
-                let _ = self.actors.layout_tx.send(super::LayoutMsg::HitTest {
+                if let Err(e) = self.actors.layout_tx.send(super::LayoutMsg::HitTest {
                     x: self.cursor_pos.0,
                     y: self.cursor_pos.1,
                     event_type: "click".to_string(),
                     script_tx: self.actors.script_tx.clone(),
-                });
+                }) {
+                    tracing::error!("Failed to send LayoutMsg::HitTest: {}", e);
+                }
             }
             // other events can be forwarded here...
             _ => (),
