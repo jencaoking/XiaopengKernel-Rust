@@ -34,14 +34,14 @@ pub fn matches_simple_selector(node: &NodePtr, part: &SimpleSelector) -> bool {
                         if let Some(p) = n.parent.as_ref().and_then(|w| w.upgrade()) {
                             let p_node = p.read().unwrap();
                             p_node.children.iter().find(|c| matches!(c.read().unwrap().data, NodeData::Element(_)))
-                                .map_or(false, |first| Arc::ptr_eq(first, node))
+                                .map_or(false, |first| NodePtr::ptr_eq(first, node))
                         } else { false }
                     },
                     "last-child" => {
                         if let Some(p) = n.parent.as_ref().and_then(|w| w.upgrade()) {
                             let p_node = p.read().unwrap();
                             p_node.children.iter().rev().find(|c| matches!(c.read().unwrap().data, NodeData::Element(_)))
-                                .map_or(false, |last| Arc::ptr_eq(last, node))
+                                .map_or(false, |last| NodePtr::ptr_eq(last, node))
                         } else { false }
                     },
                     "empty" => n.children.iter().all(|c| {
@@ -75,8 +75,8 @@ pub fn matches_selector(node: &NodePtr, selector: &Selector) -> bool {
         let mut prev = None;
         for child in &p_node.children {
             if !matches!(child.read().unwrap().data, NodeData::Element(_)) { continue; }
-            if Arc::ptr_eq(child, node) { return prev; }
-            prev = Some(Arc::clone(child));
+            if NodePtr::ptr_eq(child, node) { return prev; }
+            prev = Some(NodePtr::clone_ptr(child));
         }
         None
     }
@@ -147,7 +147,7 @@ pub fn query_selector_all(root: &NodePtr, selector_str: &str) -> Vec<NodePtr> {
         if is_element {
             for sel in selectors {
                 if matches_selector(node, sel) {
-                    results.push(Arc::clone(node));
+                    results.push(NodePtr::clone_ptr(node));
                     break;
                 }
             }
@@ -175,7 +175,7 @@ pub fn query_selector(root: &NodePtr, selector_str: &str) -> Option<NodePtr> {
         if is_element {
             for sel in selectors {
                 if matches_selector(node, sel) {
-                    return Some(Arc::clone(node));
+                    return Some(NodePtr::clone_ptr(node));
                 }
             }
         }

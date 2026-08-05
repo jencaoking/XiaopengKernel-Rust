@@ -148,7 +148,7 @@ impl BrowserEngine {
 
     fn finish_loading(&mut self, doc: xiaopeng_dom::Document) -> XiaopengResult<()> {
         // --- Expose DOM to JS Engine ---
-        let root_id = xiaopeng_script::bindings::dom::expose_node(std::sync::Arc::clone(&doc.root));
+        let root_id = xiaopeng_script::bindings::dom::expose_node(xiaopeng_dom::NodePtr::clone_ptr(&doc.root));
         let init_script = format!("____init_document({});", root_id);
         if let Err(e) = self.js_runtime.eval(&init_script) {
             tracing::warn!("Failed to init JS Document bridge: {}", e);

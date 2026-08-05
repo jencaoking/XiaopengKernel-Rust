@@ -593,7 +593,7 @@ impl HtmlTreeBuilder {
         let (target, before) = self.appropriate_place_for_inserting_node(None);
         let last_child = if let Some(b) = &before {
             let t = target.read().unwrap();
-            t.children.iter().position(|c| Arc::ptr_eq(c, b))
+            t.children.iter().position(|c| NodePtr::ptr_eq(c, b))
                 .and_then(|i| if i > 0 { Some(t.children[i-1].clone()) } else { None })
         } else {
             target.read().unwrap().last_child()
@@ -720,7 +720,7 @@ impl HtmlTreeBuilder {
                 break;
             }
             let node = self.active_formatting_elements[entry_idx - 1].clone().unwrap();
-            if self.open_elements.iter().any(|n| Arc::ptr_eq(n, &node)) {
+            if self.open_elements.iter().any(|n| NodePtr::ptr_eq(n, &node)) {
                 break;
             }
             entry_idx -= 1;
@@ -801,7 +801,7 @@ impl HtmlTreeBuilder {
             
             let formatting_element = self.active_formatting_elements[format_idx].clone().unwrap();
             
-            let open_idx_opt = self.open_elements.iter().rposition(|n| Arc::ptr_eq(n, &formatting_element));
+            let open_idx_opt = self.open_elements.iter().rposition(|n| NodePtr::ptr_eq(n, &formatting_element));
             let open_idx = match open_idx_opt {
                 Some(idx) => idx,
                 None => {
@@ -826,7 +826,7 @@ impl HtmlTreeBuilder {
             
             if furthest_block_idx.is_none() {
                 while let Some(popped) = self.open_elements.pop() {
-                    if Arc::ptr_eq(&popped, &formatting_element) {
+                    if NodePtr::ptr_eq(&popped, &formatting_element) {
                         break;
                     }
                 }

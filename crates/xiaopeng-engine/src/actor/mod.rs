@@ -116,7 +116,7 @@ impl EngineActors {
                         if let Some(ref root) = current_root {
                             info!("Script Thread: DOM mutation detected, triggering incremental layout");
                             let _ = layout_tx.send(LayoutMsg::Compute {
-                                root: Arc::clone(root),
+                                root: NodePtr::clone_ptr(root),
                                 width: config.width as f32,
                                 height: config.height as f32,
                             });
@@ -130,10 +130,10 @@ impl EngineActors {
                             info!("Script Thread: Parsing HTML");
                             if let Ok(doc) = xiaopeng_parser::parse_html(&html) {
                                 // init JS
-                                let root_id = xiaopeng_script::bindings::dom::expose_node(Arc::clone(&doc.root));
+                                let root_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&doc.root));
                                 let _ = js_runtime.eval(&format!("____init_document({});", root_id));
                                 
-                                current_root = Some(Arc::clone(&doc.root));
+                                current_root = Some(NodePtr::clone_ptr(&doc.root));
                                 
                                 // Send to layout
                                 let _ = layout_tx.send(LayoutMsg::Compute {
@@ -151,7 +151,7 @@ impl EngineActors {
                             config.height = h;
                             if let Some(ref root) = current_root {
                                 let _ = layout_tx.send(LayoutMsg::Compute {
-                                    root: Arc::clone(root),
+                                    root: NodePtr::clone_ptr(root),
                                     width: w as f32,
                                     height: h as f32,
                                 });
@@ -174,7 +174,7 @@ impl EngineActors {
                                 }
                             }
                             // Let's invoke JS:
-                            let node_id = xiaopeng_script::bindings::dom::expose_node(Arc::clone(&node));
+                            let node_id = xiaopeng_script::bindings::dom::expose_node(NodePtr::clone_ptr(&node));
                             let script = format!("if (window.__dispatch_event) window.__dispatch_event({}, '{}');", node_id, event_type);
                             let _ = js_runtime.eval(&script);
                         }

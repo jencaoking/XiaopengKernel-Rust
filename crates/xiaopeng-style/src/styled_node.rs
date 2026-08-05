@@ -43,7 +43,7 @@ impl StyledNode {
         }
         
         Some(StyledNode {
-            node: Arc::clone(node),
+            node: NodePtr::clone_ptr(node),
             style,
             children,
         })

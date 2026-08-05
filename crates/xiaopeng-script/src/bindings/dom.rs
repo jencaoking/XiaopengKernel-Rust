@@ -153,7 +153,7 @@ fn dom_set_text_content(_this: &JsValue, args: &[JsValue], ctx: &mut Context) ->
         let mut n = node.write().unwrap();
         n.children.clear();
         let text_node = Node::new(NodeData::Text(text));
-        text_node.write().unwrap().parent = Some(Arc::downgrade(&node));
+        text_node.write().unwrap().parent = Some(NodePtr::downgrade(&node));
         n.children.push(text_node);
     }
     Ok(JsValue::undefined())

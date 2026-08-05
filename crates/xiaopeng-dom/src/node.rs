@@ -1,12 +1,82 @@
 //! DOM Node definitions
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard, Arc};
 use tracing::debug;
 use crate::event::{Event, EventPhase, EventListenerEntry, EventListener};
+use indextree::{Arena, NodeId};
 
-pub type NodePtr = Arc<RwLock<Node>>;
-pub type WeakNodePtr = Weak<RwLock<Node>>;
+pub fn dom_arena() -> &'static RwLock<Arena<Node>> {
+    static ARENA: OnceLock<RwLock<Arena<Node>>> = OnceLock::new();
+    ARENA.get_or_init(|| RwLock::new(Arena::new()))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct NodePtr(pub NodeId);
+
+pub type WeakNodePtr = NodePtr;
+
+pub struct NodeGuard<'a> {
+    guard: RwLockReadGuard<'a, Arena<Node>>,
+    id: NodeId,
+}
+
+impl<'a> std::ops::Deref for NodeGuard<'a> {
+    type Target = Node;
+    fn deref(&self) -> &Self::Target {
+        self.guard.get(self.id).unwrap().get()
+    }
+}
+
+pub struct NodeWriteGuard<'a> {
+    guard: RwLockWriteGuard<'a, Arena<Node>>,
+    id: NodeId,
+}
+
+impl<'a> std::ops::Deref for NodeWriteGuard<'a> {
+    type Target = Node;
+    fn deref(&self) -> &Self::Target {
+        self.guard.get(self.id).unwrap().get()
+    }
+}
+
+impl<'a> std::ops::DerefMut for NodeWriteGuard<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.get_mut(self.id).unwrap().get_mut()
+    }
+}
+
+impl NodePtr {
+    pub fn read(&self) -> Result<NodeGuard, ()> {
+        Ok(NodeGuard {
+            guard: dom_arena().read().unwrap(),
+            id: self.0,
+        })
+    }
+    
+    pub fn write(&self) -> Result<NodeWriteGuard, ()> {
+        Ok(NodeWriteGuard {
+            guard: dom_arena().write().unwrap(),
+            id: self.0,
+        })
+    }
+
+    pub fn upgrade(&self) -> Option<NodePtr> {
+        Some(*self)
+    }
+
+    pub fn clone_ptr(ptr: &NodePtr) -> NodePtr {
+        *ptr
+    }
+
+    pub fn downgrade(ptr: &NodePtr) -> WeakNodePtr {
+        *ptr
+    }
+
+    pub fn ptr_eq(a: &NodePtr, b: &NodePtr) -> bool {
+        a.0 == b.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum NodeType {
@@ -267,7 +337,8 @@ pub struct Node {
 impl Node {
     pub fn new(data: NodeData) -> NodePtr {
         debug!(?data, "Creating new DOM Node");
-        Arc::new(RwLock::new(Node {
+        let mut arena = dom_arena().write().unwrap();
+        let id = arena.new_node(Node {
             parent: None,
             children: Vec::new(),
             data,
@@ -275,7 +346,8 @@ impl Node {
             id_cache: None,
             tag_cache: None,
             class_cache: None,
-        }))
+        });
+        NodePtr(id)
     }
 
     pub fn node_type(&self) -> NodeType {
@@ -297,7 +369,7 @@ impl Node {
 
     pub fn invalidate_caches(node_ptr: &NodePtr) {
         crate::node::mark_dom_dirty();
-        let mut current = Some(Arc::clone(node_ptr));
+        let mut current = Some(NodePtr::clone_ptr(node_ptr));
         while let Some(n) = current {
             let mut n_write = n.write().unwrap();
             let was_dirty = n_write.id_cache.is_none() 
@@ -320,17 +392,15 @@ impl Node {
     pub fn append_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) {
         debug!("Appending child to parent DOM Node");
         
-        // Remove from old parent if exists
-        if let Some(old_parent_weak) = &child_ptr.read().unwrap().parent {
-            if let Some(old_parent) = old_parent_weak.upgrade() {
-                old_parent.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
-                Self::invalidate_caches(&old_parent);
-            }
+        let old_parent = child_ptr.read().unwrap().parent.clone().and_then(|w| w.upgrade());
+        if let Some(old_parent) = old_parent {
+            old_parent.write().unwrap().children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
+            Self::invalidate_caches(&old_parent);
         }
 
         // Set new parent
-        child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
-        parent_ptr.write().unwrap().children.push(Arc::clone(child_ptr));
+        child_ptr.write().unwrap().parent = Some(NodePtr::downgrade(parent_ptr));
+        parent_ptr.write().unwrap().children.push(NodePtr::clone_ptr(child_ptr));
         Self::invalidate_caches(parent_ptr);
     }
 
@@ -349,7 +419,7 @@ impl Node {
         // We do this BEFORE acquiring parent_ptr's write lock to avoid deadlock if old_parent == parent_ptr
         let old_parent = child_ptr.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
         if let Some(ref old_p) = old_parent {
-            old_p.write().unwrap().children.retain(|c| !Arc::ptr_eq(c, child_ptr));
+            old_p.write().unwrap().children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
             Self::invalidate_caches(old_p);
         }
 
@@ -359,8 +429,8 @@ impl Node {
         // We clamp the index to prevent out-of-bounds panics after removal.
         let safe_index = index.min(parent.children.len());
         
-        child_ptr.write().unwrap().parent = Some(Arc::downgrade(parent_ptr));
-        parent.children.insert(safe_index, Arc::clone(child_ptr));
+        child_ptr.write().unwrap().parent = Some(NodePtr::downgrade(parent_ptr));
+        parent.children.insert(safe_index, NodePtr::clone_ptr(child_ptr));
         drop(parent); // drop write lock before invalidating cache
         Self::invalidate_caches(parent_ptr);
         
@@ -370,7 +440,7 @@ impl Node {
     pub fn insert_before_node(parent_ptr: &NodePtr, child_ptr: &NodePtr, reference_ptr: &NodePtr) -> Result<(), &'static str> {
         let index = {
             let parent = parent_ptr.read().unwrap();
-            parent.children.iter().position(|c| Arc::ptr_eq(c, reference_ptr))
+            parent.children.iter().position(|c| NodePtr::ptr_eq(c, reference_ptr))
         };
         
         if let Some(idx) = index {
@@ -383,7 +453,7 @@ impl Node {
     pub fn remove_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) -> Option<NodePtr> {
         debug!("Removing child from parent DOM Node");
         let mut parent = parent_ptr.write().unwrap();
-        let index = parent.children.iter().position(|c| Arc::ptr_eq(c, child_ptr));
+        let index = parent.children.iter().position(|c| NodePtr::ptr_eq(c, child_ptr));
         
         if let Some(idx) = index {
             let removed = parent.children.remove(idx);
@@ -435,10 +505,10 @@ impl Node {
         };
         if let Some(parent) = parent {
             let p = parent.read().unwrap();
-            let pos = p.children.iter().position(|c| Arc::ptr_eq(c, node_ptr))?;
+            let pos = p.children.iter().position(|c| NodePtr::ptr_eq(c, node_ptr))?;
             for sibling in p.children.iter().skip(pos + 1) {
                 if sibling.read().unwrap().node_type() == NodeType::Element {
-                    return Some(Arc::clone(sibling));
+                    return Some(NodePtr::clone_ptr(sibling));
                 }
             }
         }
@@ -452,10 +522,10 @@ impl Node {
         };
         if let Some(parent) = parent {
             let p = parent.read().unwrap();
-            let pos = p.children.iter().position(|c| Arc::ptr_eq(c, node_ptr))?;
+            let pos = p.children.iter().position(|c| NodePtr::ptr_eq(c, node_ptr))?;
             for sibling in p.children.iter().take(pos).rev() {
                 if sibling.read().unwrap().node_type() == NodeType::Element {
-                    return Some(Arc::clone(sibling));
+                    return Some(NodePtr::clone_ptr(sibling));
                 }
             }
         }
@@ -584,7 +654,7 @@ impl Node {
         if let NodeData::Element(ref el) = n.data {
             if let Some(id) = el.id() {
                 if !cache.contains_key(id) {
-                    cache.insert(id.clone(), Arc::downgrade(node));
+                    cache.insert(id.clone(), NodePtr::downgrade(node));
                 }
             }
         }
@@ -622,7 +692,7 @@ impl Node {
     fn build_tag_cache(node: &NodePtr, cache: &mut HashMap<String, Vec<WeakNodePtr>>) {
         let n = node.read().unwrap();
         if let NodeData::Element(ref el) = n.data {
-            cache.entry(el.tag_name.clone()).or_default().push(Arc::downgrade(node));
+            cache.entry(el.tag_name.clone()).or_default().push(NodePtr::downgrade(node));
         }
         for child in &n.children {
             Self::build_tag_cache(child, cache);
@@ -659,7 +729,7 @@ impl Node {
         let n = node.read().unwrap();
         if let NodeData::Element(ref el) = n.data {
             for c in el.classes() {
-                cache.entry(c.to_string()).or_default().push(Arc::downgrade(node));
+                cache.entry(c.to_string()).or_default().push(NodePtr::downgrade(node));
             }
         }
         for child in &n.children {
@@ -689,14 +759,14 @@ impl Node {
     }
 
     pub fn dispatch_event(node_ptr: &NodePtr, event: &mut Event) -> bool {
-        event.target = Some(Arc::clone(node_ptr));
+        event.target = Some(NodePtr::clone_ptr(node_ptr));
 
         let mut path = Vec::new();
-        let mut current = Arc::clone(node_ptr);
+        let mut current = NodePtr::clone_ptr(node_ptr);
         loop {
             let parent = current.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
             if let Some(p) = parent {
-                path.push(Arc::clone(&p));
+                path.push(NodePtr::clone_ptr(&p));
                 current = p;
             } else {
                 break;
@@ -706,13 +776,13 @@ impl Node {
         event.phase = EventPhase::CapturingPhase;
         for ptr in path.iter().rev() {
             if event.propagation_stopped { break; }
-            event.current_target = Some(Arc::clone(ptr));
+            event.current_target = Some(NodePtr::clone_ptr(ptr));
             Self::invoke_listeners(ptr, event);
         }
 
         if !event.propagation_stopped {
             event.phase = EventPhase::AtTarget;
-            event.current_target = Some(Arc::clone(node_ptr));
+            event.current_target = Some(NodePtr::clone_ptr(node_ptr));
             Self::invoke_listeners(node_ptr, event);
         }
 
@@ -720,7 +790,7 @@ impl Node {
             event.phase = EventPhase::BubblingPhase;
             for ptr in path.iter() {
                 if event.propagation_stopped { break; }
-                event.current_target = Some(Arc::clone(ptr));
+                event.current_target = Some(NodePtr::clone_ptr(ptr));
                 Self::invoke_listeners(ptr, event);
             }
         }
@@ -780,12 +850,12 @@ mod tests {
         // Test get_element_by_id
         let found = Node::get_element_by_id(&root, "test-id");
         assert!(found.is_some());
-        assert!(Arc::ptr_eq(&found.unwrap(), &child1));
+        assert!(NodePtr::ptr_eq(&found.unwrap(), &child1));
 
         // Test get_elements_by_tag_name
         let spans = Node::get_elements_by_tag_name(&root, "span");
         assert_eq!(spans.len(), 1);
-        assert!(Arc::ptr_eq(&spans[0], &child1));
+        assert!(NodePtr::ptr_eq(&spans[0], &child1));
 
         // Test get_elements_by_class_name
         let bolds = Node::get_elements_by_class_name(&root, "text-bold");

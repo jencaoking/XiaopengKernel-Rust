@@ -68,7 +68,7 @@ impl Document {
     fn collect_by_name(node: &NodePtr, name: &str, results: &mut Vec<NodePtr>) {
         if let NodeData::Element(ref el) = node.read().unwrap().data {
             if el.get_attribute("name") == Some(&name.to_string()) {
-                results.push(std::sync::Arc::clone(node));
+                results.push(NodePtr::clone_ptr(node));
             }
         }
         let children = node.read().unwrap().children.clone();
@@ -86,7 +86,7 @@ impl Document {
     fn collect_by_tag_name_ns(node: &NodePtr, ns: &str, local_name: &str, results: &mut Vec<NodePtr>) {
         if let NodeData::Element(ref el) = node.read().unwrap().data {
             if el.namespace_uri.as_deref() == Some(ns) && el.local_name == local_name {
-                results.push(std::sync::Arc::clone(node));
+                results.push(NodePtr::clone_ptr(node));
             }
         }
         let children = node.read().unwrap().children.clone();
