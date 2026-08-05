@@ -3,14 +3,14 @@ use crate::layout_box::LayoutBox;
 use taffy::prelude::*;
 use xiaopeng_style::computed_style::Display as KernelDisplay;
 
-pub fn layout_flex(node: &mut LayoutBox, offset_x: f32, offset_y: f32) {
+pub fn layout_flex(node: &mut LayoutBox, offset_x: f32, offset_y: f32, available_width: f32) {
     let mut taffy = TaffyTree::new();
     
     // 1. Build Taffy Tree from our LayoutBox tree
     let root_node = build_taffy_tree(&mut taffy, node);
 
     // 2. Compute Layout
-    let available_space = Size { width: AvailableSpace::Definite(1024.0), height: AvailableSpace::MaxContent };
+    let available_space = Size { width: AvailableSpace::Definite(available_width), height: AvailableSpace::MaxContent };
     taffy.compute_layout(root_node, available_space).unwrap();
 
     // 3. Sync layout results back to LayoutBox

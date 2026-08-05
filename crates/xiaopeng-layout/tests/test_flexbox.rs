@@ -24,7 +24,7 @@ fn test_flexbox_horizontal_stack() {
     root.children.push(c1);
     root.children.push(c2);
 
-    layout_flex(&mut root, 0.0, 0.0);
+    layout_flex(&mut root, 0.0, 0.0, 1024.0);
 
     // Flex container (row by default, 0.0, 0.0) should place c2 next to c1
     // Child 1: (0, 0)

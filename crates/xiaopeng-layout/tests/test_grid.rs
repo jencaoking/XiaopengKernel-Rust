@@ -24,7 +24,7 @@ fn test_grid_layout() {
     root.children.push(c1);
     root.children.push(c2);
 
-    layout_flex(&mut root, 0.0, 0.0);
+    layout_flex(&mut root, 0.0, 0.0, 1024.0);
 
     // If grid creates a 1x2 or 2x1 grid, the boxes will be laid out.
     // Since we didn't specify grid template, it probably stacks them vertically (implicit rows) or in one row.

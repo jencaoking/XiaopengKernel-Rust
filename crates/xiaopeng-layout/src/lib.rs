@@ -44,7 +44,7 @@ pub fn layout_box_recursive(
     
     match node.style.display {
         Display::Block => crate::block::layout_block(node, containing_block_width, offset_x, offset_y),
-        Display::Flex => crate::flexbox::layout_flex(node, offset_x, offset_y),
+        Display::Flex => crate::flexbox::layout_flex(node, offset_x, offset_y, containing_block_width),
         Display::Inline => crate::inline::layout_inline(node, containing_block_width, offset_x, offset_y),
         _ => crate::block::layout_block(node, containing_block_width, offset_x, offset_y),
     }
