@@ -33,7 +33,7 @@ impl WgpuRenderer {
         }).await.map_err(|e| e.to_string())?;
         
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
+        let _surface_format = surface_caps.formats.iter()
             .copied()
             .filter(|f| f.is_srgb())
             .next()
@@ -85,7 +85,7 @@ impl WgpuRenderer {
         
         // This is a bit dirty, mapping DisplayList (which uses absolute coordinates) to vertices
         // In reality we should iterate through DisplayCommands
-        let mut push_rect = |x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4], vertices: &mut Vec<Vertex>, indices: &mut Vec<u16>, current_index: &mut u16| {
+        let push_rect = |x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4], vertices: &mut Vec<Vertex>, indices: &mut Vec<u16>, current_index: &mut u16| {
             let x0 = (x / width) * 2.0 - 1.0;
             let y0 = 1.0 - (y / height) * 2.0;
             let x1 = ((x + w) / width) * 2.0 - 1.0;
