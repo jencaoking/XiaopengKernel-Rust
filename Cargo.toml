@@ -34,9 +34,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "tls1
 rustls-native-certs = "0.8"
 rustls-pemfile = "2"
 webpki-roots = "0.26"
-quinn = { version = "0.11", features = ["rustls"] }
-h3 = "0.0.6"
-h3-quinn = "0.0.7"
 bytes = "1"
 lru = "0.12"
 http = "1"
@@ -53,5 +50,3 @@ xiaopeng-net = { path = "crates/xiaopeng-net" }
 xiaopeng-script = { path = "crates/xiaopeng-script" }
 xiaopeng-engine = { path = "crates/xiaopeng-engine" }
 
-[patch.crates-io]
-h3-quinn = { path = "vendor/h3-quinn" }
