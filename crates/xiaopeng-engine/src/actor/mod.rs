@@ -14,7 +14,7 @@ pub enum ScriptMsg {
     LoadHtml(String),
     LoadUrl(String),
     Resize(u32, u32),
-    // Event(xiaopeng_dom::Event),
+    DispatchEvent(NodePtr, String),
 }
 
 /// Messages sent to the Layout Thread
@@ -24,6 +24,12 @@ pub enum LayoutMsg {
         root: NodePtr,
         width: f32,
         height: f32,
+    },
+    HitTest {
+        x: f32,
+        y: f32,
+        event_type: String,
+        script_tx: UnboundedSender<ScriptMsg>,
     },
 }
 
@@ -151,6 +157,27 @@ impl EngineActors {
                                 });
                             }
                         }
+                        ScriptMsg::DispatchEvent(node, event_type) => {
+                            info!("Script Thread: Dispatching {} event to node", event_type);
+                            // Here we could call JS dispatchEvent, but for now we just log
+                            // In real DOM: node.dispatchEvent(new Event(event_type))
+                            // To actually do this in boa:
+                            let mut js_event = xiaopeng_dom::event::Event::new(event_type.clone(), true, true);
+                            
+                            // Note: full event bubbling/capturing logic should be in xiaopeng-script bindings
+                            // We trigger the native rust listeners for now:
+                            let node_read = node.read().unwrap();
+                            if let Some(listeners) = node_read.listeners.get(&event_type) {
+                                for entry in listeners {
+                                    // Trigger callback
+                                    // (Real implementation invokes JS callback via js_runtime)
+                                }
+                            }
+                            // Let's invoke JS:
+                            let node_id = xiaopeng_script::bindings::dom::expose_node(Arc::clone(&node));
+                            let script = format!("if (window.__dispatch_event) window.__dispatch_event({}, '{}');", node_id, event_type);
+                            let _ = js_runtime.eval(&script);
+                        }
                     }
                 }
             }
@@ -159,6 +186,8 @@ impl EngineActors {
 
     fn layout_loop(mut rx: UnboundedReceiver<LayoutMsg>, render_tx: UnboundedSender<RenderMsg>) {
         info!("Layout Thread started");
+        let mut latest_layout_tree: Option<xiaopeng_layout::LayoutBox> = None;
+
         // We use blocking recv since this is a dedicated std::thread
         while let Some(msg) = rx.blocking_recv() {
             match msg {
@@ -168,6 +197,17 @@ impl EngineActors {
                         if let Ok(layout_root) = xiaopeng_layout::compute_layout(&root, width, height) {
                             let display_list = xiaopeng_renderer::DisplayList::build(&layout_root);
                             let _ = render_tx.send(RenderMsg::Render(display_list));
+                            latest_layout_tree = Some(layout_root);
+                        }
+                    }
+                }
+                LayoutMsg::HitTest { x, y, event_type, script_tx } => {
+                    if let Some(ref layout_root) = latest_layout_tree {
+                        if let Some(hit_node) = xiaopeng_layout::hit_test(layout_root, x, y) {
+                            info!("Layout Thread: Hit test found node for ({}, {})", x, y);
+                            let _ = script_tx.send(ScriptMsg::DispatchEvent(hit_node, event_type));
+                        } else {
+                            info!("Layout Thread: Hit test found nothing for ({}, {})", x, y);
                         }
                     }
                 }

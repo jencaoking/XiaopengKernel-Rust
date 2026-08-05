@@ -555,7 +555,13 @@ class Document extends Node {
 // Called by BrowserEngine after parsing to inject the root document.
 function ____init_document(id) {
     globalThis.document = new Document(id);
+    globalThis.window = globalThis;
 }
+
+globalThis.__dispatch_event = function(nodeId, eventType) {
+    var node = new Node(nodeId);
+    node.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
+};
     "#;
 
     ctx.eval(Source::from_bytes(js_classes))

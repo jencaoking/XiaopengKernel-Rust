@@ -14,6 +14,7 @@ pub struct ConstellationApp {
     pub render_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::RenderMsg>>,
     pub renderer: Option<xiaopeng_renderer::WgpuRenderer>,
     pub latest_display_list: Option<xiaopeng_renderer::DisplayList>,
+    pub cursor_pos: (f32, f32),
 }
 
 impl ConstellationApp {
@@ -26,6 +27,7 @@ impl ConstellationApp {
             render_rx,
             renderer: None,
             latest_display_list: None,
+            cursor_pos: (0.0, 0.0),
         }
     }
 }
@@ -104,6 +106,18 @@ impl ApplicationHandler for ConstellationApp {
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = (position.x as f32, position.y as f32);
+            }
+            WindowEvent::MouseInput { state: winit::event::ElementState::Released, button: winit::event::MouseButton::Left, .. } => {
+                info!("Constellation: Mouse click at {:?}", self.cursor_pos);
+                let _ = self.actors.layout_tx.send(super::LayoutMsg::HitTest {
+                    x: self.cursor_pos.0,
+                    y: self.cursor_pos.1,
+                    event_type: "click".to_string(),
+                    script_tx: self.actors.script_tx.clone(),
+                });
             }
             // other events can be forwarded here...
             _ => (),
