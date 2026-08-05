@@ -1,15 +1,7 @@
-use bytemuck::{Pod, Zeroable};
 use pollster::FutureExt;
 use wgpu::util::DeviceExt;
 use xiaopeng_layout::LayoutBox;
-use std::num::NonZero;
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    pos: [f32; 2],
-    color: [f32; 4],
-}
+use crate::canvas::wgpu_shared::{Vertex, create_render_pipeline};
 
 pub struct GpuCanvas {
     pub width: u32,
@@ -65,51 +57,7 @@ pub fn render_display_list_gpu(display_list: &[&LayoutBox], width: u32, height: 
     let render_target_view = render_target.create_view(&wgpu::TextureViewDescriptor::default());
 
     // 3. Create Pipeline
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-    
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Pipeline Layout"),
-        bind_group_layouts: &[],
-        ..Default::default()
-    });
-
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
-            })],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: None,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: NonZero::new(0),
-        cache: None,
-    });
+    let render_pipeline = create_render_pipeline(&device, wgpu::TextureFormat::Rgba8Unorm);
 
     // 4. Generate Vertices from DisplayList
     let mut vertices: Vec<Vertex> = Vec::new();

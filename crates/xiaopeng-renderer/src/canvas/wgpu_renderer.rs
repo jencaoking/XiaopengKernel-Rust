@@ -1,14 +1,7 @@
 use std::sync::Arc;
-use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 use crate::DisplayCommand;
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    pos: [f32; 2],
-    color: [f32; 4],
-}
+use crate::canvas::wgpu_shared::{Vertex, create_render_pipeline};
 
 pub struct WgpuRenderer {
     pub surface: wgpu::Surface<'static>,
@@ -48,52 +41,7 @@ impl WgpuRenderer {
             
         let config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).unwrap();
         surface.configure(&device, &config);
-        
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-        
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[],
-            ..Default::default()
-        });
-        
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
-                })],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: std::num::NonZero::new(0),
-            cache: None,
-        });
+        let render_pipeline = create_render_pipeline(&device, config.format);
 
         Ok(Self {
             surface,
@@ -137,32 +85,44 @@ impl WgpuRenderer {
         
         // This is a bit dirty, mapping DisplayList (which uses absolute coordinates) to vertices
         // In reality we should iterate through DisplayCommands
+        let mut push_rect = |x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4], vertices: &mut Vec<Vertex>, indices: &mut Vec<u16>, current_index: &mut u16| {
+            let x0 = (x / width) * 2.0 - 1.0;
+            let y0 = 1.0 - (y / height) * 2.0;
+            let x1 = ((x + w) / width) * 2.0 - 1.0;
+            let y1 = 1.0 - ((y + h) / height) * 2.0;
+
+            vertices.push(Vertex { pos: [x0, y0], color: rgba });
+            vertices.push(Vertex { pos: [x1, y0], color: rgba });
+            vertices.push(Vertex { pos: [x1, y1], color: rgba });
+            vertices.push(Vertex { pos: [x0, y1], color: rgba });
+
+            indices.push(*current_index);
+            indices.push(*current_index + 1);
+            indices.push(*current_index + 2);
+            indices.push(*current_index);
+            indices.push(*current_index + 2);
+            indices.push(*current_index + 3);
+            *current_index += 4;
+        };
+
         for command in &display_list.commands {
-            if let DisplayCommand::DrawRect { rect, color } = command {
-                let x0 = (rect.x / width) * 2.0 - 1.0;
-                let y0 = 1.0 - (rect.y / height) * 2.0;
-                let x1 = ((rect.x + rect.width) / width) * 2.0 - 1.0;
-                let y1 = 1.0 - ((rect.y + rect.height) / height) * 2.0;
-
-                let rgba = [
-                    color.r as f32 / 255.0,
-                    color.g as f32 / 255.0,
-                    color.b as f32 / 255.0,
-                    color.a as f32 / 255.0,
-                ];
-
-                vertices.push(Vertex { pos: [x0, y0], color: rgba });
-                vertices.push(Vertex { pos: [x1, y0], color: rgba });
-                vertices.push(Vertex { pos: [x1, y1], color: rgba });
-                vertices.push(Vertex { pos: [x0, y1], color: rgba });
-
-                indices.push(current_index);
-                indices.push(current_index + 1);
-                indices.push(current_index + 2);
-                indices.push(current_index);
-                indices.push(current_index + 2);
-                indices.push(current_index + 3);
-                current_index += 4;
+            match command {
+                DisplayCommand::DrawRect { rect, color } => {
+                    let rgba = [color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0];
+                    push_rect(rect.x, rect.y, rect.width, rect.height, rgba, &mut vertices, &mut indices, &mut current_index);
+                }
+                DisplayCommand::DrawBorder { rect, color, width: bw } => {
+                    let rgba = [color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0];
+                    // Top
+                    push_rect(rect.x, rect.y, rect.width, *bw, rgba, &mut vertices, &mut indices, &mut current_index);
+                    // Bottom
+                    push_rect(rect.x, rect.y + rect.height - *bw, rect.width, *bw, rgba, &mut vertices, &mut indices, &mut current_index);
+                    // Left
+                    push_rect(rect.x, rect.y, *bw, rect.height, rgba, &mut vertices, &mut indices, &mut current_index);
+                    // Right
+                    push_rect(rect.x + rect.width - *bw, rect.y, *bw, rect.height, rgba, &mut vertices, &mut indices, &mut current_index);
+                }
+                _ => {} // DrawText is not yet hardware-accelerated
             }
         }
         
