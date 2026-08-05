@@ -12,7 +12,7 @@ use tracing::info;
 use xiaopeng_common::XiaopengResult;
 
 
-pub fn render_display_list(display_list: &DisplayList, width: u32, height: u32) -> XiaopengResult<BitmapCanvas> {
+pub fn render_display_list(display_list: &DisplayList, width: u32, height: u32, font_manager: &crate::font::FontManager) -> XiaopengResult<BitmapCanvas> {
     info!("Rendering display list to {}x{} canvas", width, height);
     let mut canvas = BitmapCanvas::new(width, height);
 
@@ -25,8 +25,7 @@ pub fn render_display_list(display_list: &DisplayList, width: u32, height: u32) 
                 canvas.stroke_rect(*rect, *color, *width);
             }
             DisplayCommand::DrawText { text, rect, color, font_size } => {
-                // Wait for FontManager integration, for now just pass None
-                canvas.draw_text(text, rect.x, rect.y, *font_size, *color, None);
+                canvas.draw_text(text, rect.x, rect.y, *font_size, *color, Some(font_manager));
             }
         }
     }
@@ -48,7 +47,8 @@ mod tests {
             rect: xiaopeng_common::Rect::new(0.0, 0.0, 100.0, 100.0),
             color: xiaopeng_common::Color::rgb(255, 0, 0),
         });
-        let canvas = render_display_list(&display_list, 800, 600).unwrap();
+        let fm = crate::font::FontManager::new();
+        let canvas = render_display_list(&display_list, 800, 600, &fm).unwrap();
         assert_eq!(canvas.pixmap.width(), 800);
         assert_eq!(canvas.pixmap.height(), 600);
     }

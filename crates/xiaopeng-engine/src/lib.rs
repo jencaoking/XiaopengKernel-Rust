@@ -28,6 +28,7 @@ pub struct BrowserEngine {
     pub context: BrowsingContext,
     pub event_loop: EventLoop,
     pub js_runtime: JsRuntime,
+    pub font_manager: xiaopeng_renderer::font::FontManager,
 }
 
 impl BrowserEngine {
@@ -93,6 +94,7 @@ impl BrowserEngine {
             context: BrowsingContext::new(),
             event_loop: EventLoop::new(),
             js_runtime,
+            font_manager: xiaopeng_renderer::font::FontManager::new(),
         }
     }
 
@@ -175,6 +177,7 @@ impl BrowserEngine {
             &display_list,
             self.config.width,
             self.config.height,
+            &self.font_manager,
         )?;
 
         if self.config.headless {

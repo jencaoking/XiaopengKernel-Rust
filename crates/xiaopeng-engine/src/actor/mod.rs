@@ -217,6 +217,7 @@ impl EngineActors {
 
     fn render_loop(mut rx: UnboundedReceiver<RenderMsg>, config: crate::EngineConfig) {
         info!("Render Thread started");
+        let font_manager = xiaopeng_renderer::font::FontManager::new();
         while let Some(msg) = rx.blocking_recv() {
             match msg {
                 RenderMsg::Render(display_list) => {
@@ -225,6 +226,7 @@ impl EngineActors {
                         &display_list,
                         config.width,
                         config.height,
+                        &font_manager,
                     ) {
                         if config.headless {
                             if let Some(path) = &config.headless_output {
