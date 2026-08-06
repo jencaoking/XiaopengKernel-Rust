@@ -23,47 +23,47 @@ mod tests {
 
     #[test]
     fn test_eval_script_basic_arithmetic() {
-        let result = eval_script("1 + 2").unwrap();
+        let result = eval_script("1 + 2").expect("Unwrap failed");
         assert_eq!(result, "3");
     }
 
     #[test]
     fn test_eval_script_console_log() {
         // console.log is registered; it should not panic
-        let result = eval_script("console.log('hello boa'); 'done'").unwrap();
+        let result = eval_script("console.log('hello boa'); 'done'").expect("Unwrap failed");
         assert_eq!(result, "done");
     }
 
     #[test]
     fn test_eval_script_string_ops() {
-        let result = eval_script("'hello' + ' ' + 'world'").unwrap();
+        let result = eval_script("'hello' + ' ' + 'world'").expect("Unwrap failed");
         assert_eq!(result, "hello world");
     }
 
     #[test]
     fn test_eval_script_function_def_and_call() {
-        let result = eval_script("function add(a,b){ return a+b; } add(3,4)").unwrap();
+        let result = eval_script("function add(a,b){ return a+b; } add(3,4)").expect("Unwrap failed");
         assert_eq!(result, "7");
     }
 
     #[test]
     fn test_eval_script_settimeout_stub() {
         // setTimeout must not panic; returns numeric ID (0)
-        let result = eval_script("typeof setTimeout").unwrap();
+        let result = eval_script("typeof setTimeout").expect("Unwrap failed");
         assert_eq!(result, "function");
     }
 
     #[test]
     fn test_eval_script_location_stub() {
-        let result = eval_script("location.href").unwrap();
+        let result = eval_script("location.href").expect("Unwrap failed");
         assert_eq!(result, "about:blank");
     }
 
     #[test]
     fn test_persistent_runtime_state() {
-        let mut rt = JsRuntime::new().unwrap();
-        rt.eval("var x = 42;").unwrap();
-        let result = rt.eval("x + 1").unwrap();
+        let mut rt = JsRuntime::new().expect("Unwrap failed");
+        rt.eval("var x = 42;").expect("Unwrap failed");
+        let result = rt.eval("x + 1").expect("Unwrap failed");
         assert_eq!(result, "43");
     }
 }

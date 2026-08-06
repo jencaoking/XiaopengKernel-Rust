@@ -594,16 +594,16 @@ impl HtmlTreeBuilder {
     pub fn insert_character(&mut self, text: &str) {
         let (target, before) = self.appropriate_place_for_inserting_node(None);
         let last_child = if let Some(b) = &before {
-            let t = target.read().unwrap();
+            let t = target.read().expect("Lock poisoned");
             t.children.iter().position(|c| NodePtr::ptr_eq(c, b))
                 .and_then(|i| if i > 0 { Some(t.children[i-1].clone()) } else { None })
         } else {
-            target.read().unwrap().last_child()
+            target.read().expect("Lock poisoned").last_child()
         };
         
         let mut appended = false;
         if let Some(lc) = last_child {
-            let mut node = lc.write().unwrap();
+            let mut node = lc.write().expect("Lock poisoned");
             if let xiaopeng_dom::NodeData::Text(ref mut t) = node.data {
                 t.push_str(text);
                 appended = true;
@@ -652,7 +652,7 @@ impl HtmlTreeBuilder {
         let mut found = false;
         for node in self.open_elements.iter().rev() {
             pop_count += 1;
-            if let xiaopeng_dom::NodeData::Element(ref el) = node.read().unwrap().data {
+            if let xiaopeng_dom::NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
                 if el.tag_name == name {
                     found = true;
                     break;
@@ -682,7 +682,7 @@ impl HtmlTreeBuilder {
     pub fn generate_implied_end_tags(&mut self, exclude: Option<&str>) {
         while let Some(node) = self.open_elements.last() {
             let name = {
-                let n = node.read().unwrap();
+                let n = node.read().expect("Lock poisoned");
                 if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                     el.tag_name.clone()
                 } else {
@@ -719,7 +719,7 @@ impl HtmlTreeBuilder {
 
     pub fn reconstruct_active_formatting_elements(&mut self) {
         if self.active_formatting_elements.is_empty() { return; }
-        if self.active_formatting_elements.last().unwrap().is_none() { return; }
+        if self.active_formatting_elements.last().expect("Unwrap failed").is_none() { return; }
         
         let mut entry_idx = self.active_formatting_elements.len() - 1;
         
@@ -727,7 +727,7 @@ impl HtmlTreeBuilder {
             if self.active_formatting_elements[entry_idx - 1].is_none() {
                 break;
             }
-            let node = self.active_formatting_elements[entry_idx - 1].clone().unwrap();
+            let node = self.active_formatting_elements[entry_idx - 1].clone().expect("Unwrap failed");
             if self.open_elements.iter().any(|n| NodePtr::ptr_eq(n, &node)) {
                 break;
             }
@@ -735,9 +735,9 @@ impl HtmlTreeBuilder {
         }
         
         while entry_idx < self.active_formatting_elements.len() {
-            let node = self.active_formatting_elements[entry_idx].clone().unwrap();
+            let node = self.active_formatting_elements[entry_idx].clone().expect("Unwrap failed");
             let name = {
-                let n = node.read().unwrap();
+                let n = node.read().expect("Lock poisoned");
                 if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                     el.tag_name.clone()
                 } else {
@@ -747,7 +747,7 @@ impl HtmlTreeBuilder {
             
             let mut el_data = xiaopeng_dom::ElementData::new(name);
             {
-                let n = node.read().unwrap();
+                let n = node.read().expect("Lock poisoned");
                 if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                     for attr in &el.attributes {
                         el_data.set_attribute_ns(attr.namespace_uri.clone(), attr.prefix.clone(), attr.local_name.clone(), attr.value.clone());
@@ -792,7 +792,7 @@ impl HtmlTreeBuilder {
             let mut format_idx_opt = None;
             for (idx, node_opt) in self.active_formatting_elements.iter().enumerate().rev() {
                 if let Some(node) = node_opt {
-                    let n = node.read().unwrap();
+                    let n = node.read().expect("Lock poisoned");
                     if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                         if el.tag_name == subject {
                             format_idx_opt = Some(idx);
@@ -809,7 +809,7 @@ impl HtmlTreeBuilder {
                 None => return false,
             };
             
-            let formatting_element = self.active_formatting_elements[format_idx].clone().unwrap();
+            let formatting_element = self.active_formatting_elements[format_idx].clone().expect("Unwrap failed");
             
             let open_idx_opt = self.open_elements.iter().rposition(|n| NodePtr::ptr_eq(n, &formatting_element));
             let open_idx = match open_idx_opt {
@@ -823,7 +823,7 @@ impl HtmlTreeBuilder {
             let mut furthest_block_idx = None;
             for (idx, node) in self.open_elements.iter().enumerate().skip(open_idx + 1) {
                 let is_special = {
-                    let n = node.read().unwrap();
+                    let n = node.read().expect("Lock poisoned");
                     if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                         matches!(el.tag_name.as_str(), "address" | "applet" | "area" | "article" | "aside" | "base" | "basefont" | "bgsound" | "blockquote" | "body" | "br" | "button" | "caption" | "center" | "col" | "colgroup" | "dd" | "details" | "dir" | "div" | "dl" | "dt" | "embed" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "frame" | "frameset" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "head" | "header" | "hgroup" | "hr" | "html" | "iframe" | "img" | "input" | "keygen" | "li" | "link" | "listing" | "main" | "marquee" | "menu" | "meta" | "nav" | "noembed" | "noframes" | "noscript" | "object" | "ol" | "p" | "param" | "plaintext" | "pre" | "script" | "section" | "select" | "source" | "style" | "summary" | "table" | "tbody" | "td" | "template" | "textarea" | "tfoot" | "th" | "thead" | "title" | "tr" | "track" | "ul" | "wbr" | "xmp")
                     } else { false }
@@ -865,12 +865,12 @@ impl HtmlTreeBuilder {
     }
 
     pub fn appropriate_place_for_inserting_node(&mut self, override_target: Option<NodePtr>) -> (NodePtr, Option<NodePtr>) {
-        let target = override_target.unwrap_or_else(|| self.open_elements.last().unwrap().clone());
+        let target = override_target.unwrap_or_else(|| self.open_elements.last().expect("Unwrap failed").clone());
         if !self.foster_parenting {
             return (target, None);
         }
         let target_name = {
-            let n = target.read().unwrap();
+            let n = target.read().expect("Lock poisoned");
             if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                 el.tag_name.clone()
             } else {
@@ -881,7 +881,7 @@ impl HtmlTreeBuilder {
             // Find last table
             let mut last_table = None;
             for node in self.open_elements.iter().rev() {
-                let n = node.read().unwrap();
+                let n = node.read().expect("Lock poisoned");
                 if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
                     if el.tag_name == "table" {
                         last_table = Some(node.clone());
@@ -891,7 +891,7 @@ impl HtmlTreeBuilder {
             }
             if let Some(table) = last_table {
                 let table_parent = {
-                    let n = table.read().unwrap();
+                    let n = table.read().expect("Lock poisoned");
                     n.parent.clone().and_then(|w| w.upgrade())
                 };
                 if let Some(parent) = table_parent {

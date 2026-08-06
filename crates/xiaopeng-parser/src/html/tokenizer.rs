@@ -212,7 +212,7 @@ impl HtmlTokenizer {
                 attributes.push(attr);
             }
         }
-        let token = self.current_token.take().unwrap();
+        let token = self.current_token.take().expect("Unwrap failed");
         
         self.state = TokenizerState::Data;
         
@@ -260,7 +260,7 @@ impl HtmlTokenizer {
                         let is_ws = ch.is_whitespace();
                         while let Some(&next_c) = self.buffer.front() {
                             if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
-                            s.push(self.buffer.pop_front().unwrap());
+                            s.push(self.buffer.pop_front().expect("Unwrap failed"));
                             self.position += 1;
                             if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
                         }
@@ -447,7 +447,7 @@ impl HtmlTokenizer {
                     match ch {
                         '>' => {
                             self.state = TokenizerState::Data;
-                            let token = self.current_token.take().unwrap();
+                            let token = self.current_token.take().expect("Unwrap failed");
                             return Ok(self.emit(token));
                         }
                         '\0' => {
@@ -456,7 +456,7 @@ impl HtmlTokenizer {
                             }
                         }
                         _ if eof => {
-                            let token = self.current_token.take().unwrap();
+                            let token = self.current_token.take().expect("Unwrap failed");
                             return Ok(self.emit(token));
                         }
                         _ => {
@@ -470,7 +470,7 @@ impl HtmlTokenizer {
                     if ch == '-' {
                         if let Some(&next_ch) = self.buffer.front() {
                             if next_ch == '-' {
-                                self.consume_next().unwrap(); // consume the second '-'
+                                self.consume_next().expect("Unwrap failed"); // consume the second '-'
                                 self.current_token = Some(HtmlToken::Comment(String::new()));
                                 self.state = TokenizerState::CommentStart;
                             } else {
@@ -488,7 +488,7 @@ impl HtmlTokenizer {
                         if self.buffer.len() >= 6 {
                             let s: String = self.buffer.iter().take(6).collect();
                             if s.eq_ignore_ascii_case("octype") {
-                                for _ in 0..6 { self.consume_next().unwrap(); }
+                                for _ in 0..6 { self.consume_next().expect("Unwrap failed"); }
                                 self.current_token = Some(HtmlToken::Doctype {
                                     name: None,
                                     public_id: None,
@@ -511,7 +511,7 @@ impl HtmlTokenizer {
                         if self.buffer.len() >= 6 {
                             let s: String = self.buffer.iter().take(6).collect();
                             if s == "CDATA[" {
-                                for _ in 0..6 { self.consume_next().unwrap(); }
+                                for _ in 0..6 { self.consume_next().expect("Unwrap failed"); }
                                 self.current_token = Some(HtmlToken::Cdata(String::new()));
                                 self.state = TokenizerState::CdataSection;
                             } else {
@@ -690,10 +690,10 @@ impl HtmlTokenizer {
                                 s.push(*c);
                             }
                             if s.eq_ignore_ascii_case("PUBLIC") && s.len() == 6 {
-                                for _ in 0..5 { self.consume_next().unwrap(); }
+                                for _ in 0..5 { self.consume_next().expect("Unwrap failed"); }
                                 self.state = TokenizerState::AfterDoctypePublicKeyword;
                             } else if s.eq_ignore_ascii_case("SYSTEM") && s.len() == 6 {
-                                for _ in 0..5 { self.consume_next().unwrap(); }
+                                for _ in 0..5 { self.consume_next().expect("Unwrap failed"); }
                                 self.state = TokenizerState::AfterDoctypeSystemKeyword;
                             } else {
                                 if let Some(HtmlToken::Doctype { ref mut force_quirks, .. }) = self.current_token {
@@ -1017,7 +1017,7 @@ impl HtmlTokenizer {
                         let is_ws = ch.is_whitespace();
                         while let Some(&next_c) = self.buffer.front() {
                             if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
-                            s.push(self.buffer.pop_front().unwrap());
+                            s.push(self.buffer.pop_front().expect("Unwrap failed"));
                             self.position += 1;
                             if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
                         }
@@ -1076,7 +1076,7 @@ impl HtmlTokenizer {
                         let is_ws = ch.is_whitespace();
                         while let Some(&next_c) = self.buffer.front() {
                             if next_c == '<' || next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
-                            s.push(self.buffer.pop_front().unwrap());
+                            s.push(self.buffer.pop_front().expect("Unwrap failed"));
                             self.position += 1;
                             if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
                         }
@@ -1132,7 +1132,7 @@ impl HtmlTokenizer {
                         let is_ws = ch.is_whitespace();
                         while let Some(&next_c) = self.buffer.front() {
                             if next_c == '\0' || next_c.is_whitespace() != is_ws { break; }
-                            s.push(self.buffer.pop_front().unwrap());
+                            s.push(self.buffer.pop_front().expect("Unwrap failed"));
                             self.position += 1;
                             if next_c == '\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
                         }

@@ -63,7 +63,7 @@ fn test_end_to_end_pipeline() {
     let styled_tree = xiaopeng_style::StyledNode::build(&root, &resolver, None, 16.0, 800.0, 600.0).expect("Root should not be display: none");
     // Find container in the styled tree robustly
     fn find_styled_node<'a>(node: &'a xiaopeng_style::StyledNode, id: &str) -> Option<&'a xiaopeng_style::StyledNode> {
-        let n = node.node.read().unwrap();
+        let n = node.node.read().expect("Lock poisoned");
         if let xiaopeng_dom::NodeData::Element(ref el) = n.data {
             if el.id().map(|s| s.as_str()) == Some(id) {
                 return Some(node);
@@ -87,7 +87,7 @@ fn test_end_to_end_pipeline() {
     // Container should have 2 element children (p, span), and some text nodes.
     // However, #hidden-box should NOT be in the styled tree!
     let has_hidden = container_styled.children.iter().any(|c| {
-        let node_ref = c.node.read().unwrap();
+        let node_ref = c.node.read().expect("Lock poisoned");
         if let xiaopeng_dom::NodeData::Element(ref el) = node_ref.data {
             el.id() == Some(&"hidden-box".to_string())
         } else {

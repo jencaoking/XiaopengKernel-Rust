@@ -38,7 +38,7 @@ pub fn resolve_style(
         style.font_size = parent.font_size;
     }
 
-    let n = node.read().unwrap();
+    let n = node.read().expect("Lock poisoned");
     let el = match &n.data {
         xiaopeng_dom::NodeData::Element(el) => el,
         _ => return style,

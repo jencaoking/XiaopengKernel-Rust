@@ -28,11 +28,11 @@ fn test_hit_testing_basic() {
     root.children.push(c2);
 
     // Hit root only
-    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 700.0, 500.0).unwrap(), &root_node));
+    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 700.0, 500.0).expect("Unwrap failed"), &root_node));
     
     // Hit c1 (only c1 covers this area)
-    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 20.0, 20.0).unwrap(), &c1_node));
+    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 20.0, 20.0).expect("Unwrap failed"), &c1_node));
     
     // Hit overlap area: c2 is above c1 (z-index 10 > 0)
-    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 60.0, 60.0).unwrap(), &c2_node));
+    assert!(xiaopeng_dom::NodePtr::ptr_eq(&hit_test(&root, 60.0, 60.0).expect("Unwrap failed"), &c2_node));
 }

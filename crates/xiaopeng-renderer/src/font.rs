@@ -95,7 +95,7 @@ impl FontManager {
     pub fn rasterize_glyph(&self, glyph_id: u16, font_size: f32) -> Result<Image, String> {
         let cache_key = (glyph_id, font_size.to_bits());
         
-        let mut cache = self.scaler_cache.lock().unwrap();
+        let mut cache = self.scaler_cache.lock().expect("Unwrap failed");
         if let Some(img) = cache.glyph_cache.get(&cache_key) {
             return Ok(img.clone());
         }

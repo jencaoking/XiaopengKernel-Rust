@@ -37,40 +37,40 @@ mod tests {
         let html_input = "<html><head><title>Test</title></head><body><div id='app'>Hello</div></body></html>";
         let res = parse_html(html_input);
         assert!(res.is_ok());
-        let doc = res.unwrap();
+        let doc = res.expect("Unwrap failed");
         
-        let root = doc.root.read().unwrap();
+        let root = doc.root.read().expect("Lock poisoned");
         assert_eq!(root.child_element_count(), 1, "Document should have 1 child element (<html>)");
         
-        let html_node = root.first_element_child().unwrap();
-        if let xiaopeng_dom::NodeData::Element(ref el) = html_node.read().unwrap().data {
+        let html_node = root.first_element_child().expect("Unwrap failed");
+        if let xiaopeng_dom::NodeData::Element(ref el) = html_node.read().expect("Lock poisoned").data {
             assert_eq!(el.tag_name, "html");
         } else {
             panic!("Expected html element");
         }
         
-        assert_eq!(html_node.read().unwrap().child_element_count(), 2, "<html> should have <head> and <body>");
+        assert_eq!(html_node.read().expect("Lock poisoned").child_element_count(), 2, "<html> should have <head> and <body>");
         
-        let head_node = html_node.read().unwrap().first_element_child().unwrap();
-        let body_node = html_node.read().unwrap().last_element_child().unwrap();
+        let head_node = html_node.read().expect("Lock poisoned").first_element_child().expect("Unwrap failed");
+        let body_node = html_node.read().expect("Lock poisoned").last_element_child().expect("Unwrap failed");
         
-        if let xiaopeng_dom::NodeData::Element(ref el) = head_node.read().unwrap().data {
+        if let xiaopeng_dom::NodeData::Element(ref el) = head_node.read().expect("Lock poisoned").data {
             assert_eq!(el.tag_name, "head");
         }
         
-        if let xiaopeng_dom::NodeData::Element(ref el) = body_node.read().unwrap().data {
+        if let xiaopeng_dom::NodeData::Element(ref el) = body_node.read().expect("Lock poisoned").data {
             assert_eq!(el.tag_name, "body");
         }
         
-        let div_node = body_node.read().unwrap().first_element_child().unwrap();
+        let div_node = body_node.read().expect("Lock poisoned").first_element_child().expect("Unwrap failed");
         assert_eq!(
-            div_node.read().unwrap().node_type(),
+            div_node.read().expect("Lock poisoned").node_type(),
             xiaopeng_dom::NodeType::Element
         );
         let tag_name;
         let id_value;
         {
-            let guard = div_node.read().unwrap();
+            let guard = div_node.read().expect("Lock poisoned");
             if let xiaopeng_dom::NodeData::Element(ref el) = guard.data {
                 tag_name = el.tag_name.clone();
                 id_value = el.id().cloned();

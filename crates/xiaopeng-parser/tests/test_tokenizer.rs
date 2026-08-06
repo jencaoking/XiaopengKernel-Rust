@@ -10,7 +10,7 @@ fn create_tokenizer(input: &str) -> HtmlTokenizer {
 #[test]
 fn test_tokenizer_empty_input() {
     let mut tokenizer = create_tokenizer("");
-    let token = tokenizer.next_token().unwrap();
+    let token = tokenizer.next_token().expect("Unwrap failed");
     assert_eq!(token, Some(HtmlToken::Eof));
 }
 
@@ -61,7 +61,7 @@ fn test_tokenizer_attributes() {
     let html = "<div id=\"test\" class='foo' disabled>";
     let mut tokenizer = create_tokenizer(html);
 
-    let token = tokenizer.next_token().unwrap().unwrap();
+    let token = tokenizer.next_token().expect("Unwrap failed").expect("Unwrap failed");
     match token {
         HtmlToken::StartTag { name, self_closing, attributes } => {
             assert_eq!(name, "div");
@@ -86,7 +86,7 @@ fn test_tokenizer_rawtext_script() {
     let input = "<script>var a = b < c;</script>";
     let mut tokenizer = create_tokenizer(input);
 
-    let token1 = tokenizer.next_token().unwrap().unwrap();
+    let token1 = tokenizer.next_token().expect("Unwrap failed").expect("Unwrap failed");
     if let HtmlToken::StartTag { name, self_closing, .. } = token1 {
         assert_eq!(name, "script");
         assert!(!self_closing);
@@ -98,7 +98,7 @@ fn test_tokenizer_rawtext_script() {
     // It should be emitted as characters
     let mut script_content = String::new();
     loop {
-        let t = tokenizer.next_token().unwrap().unwrap();
+        let t = tokenizer.next_token().expect("Unwrap failed").expect("Unwrap failed");
         match t {
             HtmlToken::Character(c) => script_content.push_str(&c),
             HtmlToken::EndTag { name } => {

@@ -59,7 +59,7 @@ impl<'a> CssParser<'a> {
         let mut result = String::new();
         while let Some(c) = self.next_char() {
             if c.is_alphanumeric() || c == '-' || c == '_' || c > '\x7F' {
-                result.push(self.consume_char().unwrap());
+                result.push(self.consume_char().expect("Unwrap failed"));
             } else if c == '\\' {
                 self.consume_char(); // consume '\'
                 if let Some(escaped) = self.consume_char() {
@@ -188,7 +188,7 @@ impl<'a> CssParser<'a> {
                             self.consume_char();
                             value.push('(');
                             while let Some(c) = self.next_char() {
-                                value.push(self.consume_char().unwrap());
+                                value.push(self.consume_char().expect("Unwrap failed"));
                                 if c == ')' { break; }
                             }
                         }
@@ -207,9 +207,9 @@ impl<'a> CssParser<'a> {
                     if let Some(c) = self.next_char() {
                         if c != ']' {
                             let mut op_str = String::new();
-                            op_str.push(self.consume_char().unwrap());
+                            op_str.push(self.consume_char().expect("Unwrap failed"));
                             if self.next_char() == Some('=') {
-                                op_str.push(self.consume_char().unwrap());
+                                op_str.push(self.consume_char().expect("Unwrap failed"));
                             }
                             
                             op = match op_str.as_str() {
@@ -228,20 +228,20 @@ impl<'a> CssParser<'a> {
                             // Check for quote
                             let quote = self.next_char();
                             if quote == Some('"') || quote == Some('\'') {
-                                let q = self.consume_char().unwrap();
+                                let q = self.consume_char().expect("Unwrap failed");
                                 while let Some(vc) = self.next_char() {
                                     if vc == q {
                                         self.consume_char();
                                         break;
                                     }
-                                    val.push(self.consume_char().unwrap());
+                                    val.push(self.consume_char().expect("Unwrap failed"));
                                 }
                             } else {
                                 while let Some(vc) = self.next_char() {
                                     if vc == ']' || vc.is_whitespace() {
                                         break;
                                     }
-                                    val.push(self.consume_char().unwrap());
+                                    val.push(self.consume_char().expect("Unwrap failed"));
                                 }
                             }
                             attr_val = Some(val);
@@ -301,7 +301,7 @@ impl<'a> CssParser<'a> {
                         if c == ';' || c == '}' {
                             break;
                         }
-                        value.push(self.consume_char().unwrap());
+                        value.push(self.consume_char().expect("Unwrap failed"));
                     }
                     
                     let mut value = value.trim().to_string();

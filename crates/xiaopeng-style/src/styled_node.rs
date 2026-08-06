@@ -31,7 +31,7 @@ impl StyledNode {
         
         let mut children = Vec::new();
         
-        let node_ref = node.read().unwrap();
+        let node_ref = node.read().expect("Lock poisoned");
         
         // If this is the root node (html), its font size becomes the root font size for children
         let current_root_font_size = if parent_style.is_none() { style.font_size } else { root_font_size };

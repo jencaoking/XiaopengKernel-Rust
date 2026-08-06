@@ -48,7 +48,7 @@ mod tests {
             color: xiaopeng_common::Color::rgb(255, 0, 0),
         });
         let fm = crate::font::FontManager::new();
-        let canvas = render_display_list(&display_list, 800, 600, &fm).unwrap();
+        let canvas = render_display_list(&display_list, 800, 600, &fm).expect("Unwrap failed");
         assert_eq!(canvas.pixmap.width(), 800);
         assert_eq!(canvas.pixmap.height(), 600);
     }
@@ -65,7 +65,7 @@ mod tests {
         box1.dimensions.content.height = 50.0;
 
         let list = vec![&box1];
-        let gpu_canvas = render_display_list_gpu(&list, 200, 200).unwrap();
+        let gpu_canvas = render_display_list_gpu(&list, 200, 200).expect("Unwrap failed");
         assert_eq!(gpu_canvas.width, 200);
         assert_eq!(gpu_canvas.height, 200);
         assert_eq!(gpu_canvas.pixels.len(), 200 * 200 * 4);

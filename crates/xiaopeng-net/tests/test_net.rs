@@ -28,7 +28,7 @@ mod unit {
         let req = Request::post("https://example.com/api", "hello world");
         assert_eq!(req.method, Method::Post);
         assert!(req.body.is_some());
-        assert_eq!(&*req.body.unwrap(), b"hello world");
+        assert_eq!(&*req.body.expect("Unwrap failed"), b"hello world");
     }
 
     #[test]
@@ -52,7 +52,7 @@ mod unit {
         // Should be fresh (3600 second max-age)
         let hit = cache.get("GET", "https://example.com");
         assert!(hit.is_some());
-        assert_eq!(hit.unwrap().response.status, 200);
+        assert_eq!(hit.expect("Unwrap failed").response.status, 200);
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod network {
     #[ignore = "requires internet"]
     async fn test_http1_plain() {
         let client = NetClient::new().with_protocol(ProtocolHint::Http1);
-        let resp = client.fetch(Request::get("http://example.com")).await.unwrap();
+        let resp = client.fetch(Request::get("http://example.com")).await.expect("Unwrap failed");
         assert!(resp.ok(), "expected 2xx, got {}", resp.status);
         assert_eq!(resp.version, HttpVersion::Http1_1);
         let body = resp.body_text();
@@ -110,7 +110,7 @@ mod network {
     #[ignore = "requires internet"]
     async fn test_https_auto_negotiates_h2() {
         let client = NetClient::new().with_protocol(ProtocolHint::Auto);
-        let resp = client.fetch(Request::get("https://www.google.com")).await.unwrap();
+        let resp = client.fetch(Request::get("https://www.google.com")).await.expect("Unwrap failed");
         assert!(resp.ok(), "expected 2xx, got {}", resp.status);
         // Google supports H2, auto mode should pick it.
         assert!(matches!(resp.version, HttpVersion::Http2 | HttpVersion::Http1_1));
@@ -121,7 +121,7 @@ mod network {
     async fn test_redirect_following() {
         // http://example.com redirects to https://example.com (301)
         let client = NetClient::new();
-        let resp = client.fetch(Request::get("http://example.com")).await.unwrap();
+        let resp = client.fetch(Request::get("http://example.com")).await.expect("Unwrap failed");
         assert!(resp.ok(), "expected 2xx after redirect, got {}", resp.status);
     }
 
@@ -130,11 +130,11 @@ mod network {
     async fn test_cache_second_request_is_hit() {
         let client = NetClient::new().with_protocol(ProtocolHint::Http1);
         // First request: cache miss
-        let resp1 = client.fetch(Request::get("http://example.com/")).await.unwrap();
+        let resp1 = client.fetch(Request::get("http://example.com/")).await.expect("Unwrap failed");
         assert!(resp1.ok());
         // Only cache if server returned max-age; this is a best-effort test.
         // We just check the second request doesn't error.
-        let resp2 = client.fetch(Request::get("http://example.com/")).await.unwrap();
+        let resp2 = client.fetch(Request::get("http://example.com/")).await.expect("Unwrap failed");
         assert!(resp2.ok());
     }
 
@@ -143,7 +143,7 @@ mod network {
     async fn test_http3_cloudflare() {
         // Cloudflare endpoints advertise h3 via Alt-Svc.
         let client = NetClient::new().with_protocol(ProtocolHint::Http3);
-        let resp = client.fetch(Request::get("https://cloudflare.com")).await.unwrap();
+        let resp = client.fetch(Request::get("https://cloudflare.com")).await.expect("Unwrap failed");
         assert!(resp.ok() || resp.redirect(), "status: {}", resp.status);
         assert_eq!(resp.version, HttpVersion::Http3);
     }

@@ -11,7 +11,7 @@ pub fn layout_flex(node: &mut LayoutBox, offset_x: f32, offset_y: f32, available
 
     // 2. Compute Layout
     let available_space = Size { width: AvailableSpace::Definite(available_width), height: AvailableSpace::MaxContent };
-    taffy.compute_layout(root_node, available_space).unwrap();
+    taffy.compute_layout(root_node, available_space).expect("Unwrap failed");
 
     // 3. Sync layout results back to LayoutBox
     sync_taffy_layout(&taffy, root_node, node, offset_x, offset_y);
@@ -144,11 +144,11 @@ fn build_taffy_tree(taffy: &mut TaffyTree, lbox: &LayoutBox) -> NodeId {
         child_nodes.push(build_taffy_tree(taffy, child));
     }
     
-    taffy.new_with_children(style, &child_nodes).unwrap()
+    taffy.new_with_children(style, &child_nodes).expect("Unwrap failed")
 }
 
 fn sync_taffy_layout(taffy: &TaffyTree, node_id: NodeId, lbox: &mut LayoutBox, offset_x: f32, offset_y: f32) {
-    let layout = taffy.layout(node_id).unwrap();
+    let layout = taffy.layout(node_id).expect("Unwrap failed");
     
     // Copy computed geometry back
     lbox.dimensions.content.x = offset_x + layout.location.x;
@@ -157,7 +157,7 @@ fn sync_taffy_layout(taffy: &TaffyTree, node_id: NodeId, lbox: &mut LayoutBox, o
     lbox.dimensions.content.height = layout.size.height;
     
     // Recursively sync children
-    let child_ids = taffy.children(node_id).unwrap();
+    let child_ids = taffy.children(node_id).expect("Unwrap failed");
     for (i, child) in lbox.children.iter_mut().enumerate() {
         sync_taffy_layout(taffy, child_ids[i], child, lbox.dimensions.content.x, lbox.dimensions.content.y);
     }

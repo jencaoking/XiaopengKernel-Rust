@@ -39,24 +39,24 @@ fn test_tree_builder_flow() {
     
     // Verify tree state
     let doc = builder.document;
-    let root = doc.root.read().unwrap();
-    let html = root.first_element_child().unwrap();
-    assert_eq!(html.read().unwrap().child_element_count(), 2);
+    let root = doc.root.read().expect("Lock poisoned");
+    let html = root.first_element_child().expect("Unwrap failed");
+    assert_eq!(html.read().expect("Lock poisoned").child_element_count(), 2);
     
-    let head = html.read().unwrap().first_element_child().unwrap();
+    let head = html.read().expect("Lock poisoned").first_element_child().expect("Unwrap failed");
     let head_tag;
     {
-        let guard = head.read().unwrap();
+        let guard = head.read().expect("Lock poisoned");
         if let xiaopeng_dom::NodeData::Element(ref el) = guard.data {
             head_tag = el.tag_name.clone();
         } else { panic!("Expected head"); }
     }
     assert_eq!(head_tag, "head");
     
-    let body = html.read().unwrap().last_element_child().unwrap();
+    let body = html.read().expect("Lock poisoned").last_element_child().expect("Unwrap failed");
     let body_tag;
     {
-        let guard = body.read().unwrap();
+        let guard = body.read().expect("Lock poisoned");
         if let xiaopeng_dom::NodeData::Element(ref el) = guard.data {
             body_tag = el.tag_name.clone();
         } else { panic!("Expected body"); }

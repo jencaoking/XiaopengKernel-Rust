@@ -32,9 +32,9 @@ fn test_add_event_listener_and_dispatch() {
   </script>
 </body></html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
-    let result = engine.js_runtime.eval("clicked").unwrap();
+    let result = engine.js_runtime.eval("clicked").expect("Unwrap failed");
     assert_eq!(result, "true", "listener should have fired and set clicked=true");
 }
 
@@ -55,9 +55,9 @@ fn test_multiple_listeners_all_called() {
   </script>
 </body></html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
-    let result = engine.js_runtime.eval("count").unwrap();
+    let result = engine.js_runtime.eval("count").expect("Unwrap failed");
     assert_eq!(result, "111");
 }
 
@@ -78,9 +78,9 @@ fn test_event_object_passed_to_listener() {
   </script>
 </body></html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
-    let result = engine.js_runtime.eval("capturedType").unwrap();
+    let result = engine.js_runtime.eval("capturedType").expect("Unwrap failed");
     assert_eq!(result, "mousedown");
 }
 
@@ -102,9 +102,9 @@ fn test_remove_event_listener() {
   </script>
 </body></html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
-    let result = engine.js_runtime.eval("count").unwrap();
+    let result = engine.js_runtime.eval("count").expect("Unwrap failed");
     assert_eq!(result, "1", "listener should only fire once before being removed");
 }
 
@@ -130,9 +130,9 @@ fn test_event_bubbling() {
   </script>
 </body></html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
-    let result = engine.js_runtime.eval("log.join(',')").unwrap();
+    let result = engine.js_runtime.eval("log.join(',')").expect("Unwrap failed");
     // child fires first (at-target), then bubbles to parent
     assert!(result.contains("child"), "child listener must fire");
     assert!(result.contains("parent"), "parent listener must fire due to bubbling");

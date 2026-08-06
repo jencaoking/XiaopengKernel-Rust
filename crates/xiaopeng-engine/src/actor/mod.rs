@@ -92,7 +92,7 @@ impl EngineActors {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+                .expect("Unwrap failed");
             rt.block_on(async {
                 Self::script_loop(script_rx, layout_tx_clone, config_clone2).await;
             });
@@ -297,13 +297,13 @@ async fn collect_stylesheets(root: &NodePtr, base_url: &str, net_client: &xiaope
     // We can do a BFS or DFS on the DOM
     let mut stack = vec![NodePtr::clone_ptr(root)];
     while let Some(node) = stack.pop() {
-        let node_ref = node.read().unwrap();
+        let node_ref = node.read().expect("Lock poisoned");
         if let xiaopeng_dom::NodeData::Element(el) = &node_ref.data {
             if el.tag_name == "style" {
                 // Collect inner text
                 let mut text = String::new();
                 for child in &node_ref.children {
-                    let c_ref = child.read().unwrap();
+                    let c_ref = child.read().expect("Lock poisoned");
                     if let xiaopeng_dom::NodeData::Text(t) = &c_ref.data {
                         text.push_str(t);
                     }

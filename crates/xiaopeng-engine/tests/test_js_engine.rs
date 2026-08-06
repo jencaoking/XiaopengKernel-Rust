@@ -17,7 +17,7 @@ fn test_js_runtime_is_initialized() {
     // Just verify the engine starts without panicking (JsRuntime is created)
     let mut engine = make_engine();
     // Direct eval through js_runtime
-    let result = engine.js_runtime.eval("40 + 2").unwrap();
+    let result = engine.js_runtime.eval("40 + 2").expect("Unwrap failed");
     assert_eq!(result, "42");
 }
 
@@ -31,10 +31,10 @@ fn test_load_html_with_inline_script() {
   <body><p>Hello</p></body>
 </html>"#;
 
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 
     // The script should have run and set `pageTitle`
-    let result = engine.js_runtime.eval("pageTitle").unwrap();
+    let result = engine.js_runtime.eval("pageTitle").expect("Unwrap failed");
     assert_eq!(result, "XiaopengKernel");
 }
 
@@ -46,7 +46,7 @@ fn test_load_html_script_console_log() {
 <html><body>
   <script>console.log('hello from inline script');</script>
 </body></html>"#;
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 }
 
 #[test]
@@ -59,16 +59,16 @@ fn test_load_html_script_error_is_non_fatal() {
   <p>Still renders</p>
 </body></html>"#;
     // Should succeed (error is logged, not propagated)
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
 }
 
 #[test]
 fn test_js_runtime_persistent_state_across_eval() {
     let mut engine = make_engine();
-    engine.js_runtime.eval("var counter = 0;").unwrap();
-    engine.js_runtime.eval("counter += 1;").unwrap();
-    engine.js_runtime.eval("counter += 1;").unwrap();
-    let result = engine.js_runtime.eval("counter").unwrap();
+    engine.js_runtime.eval("var counter = 0;").expect("Unwrap failed");
+    engine.js_runtime.eval("counter += 1;").expect("Unwrap failed");
+    engine.js_runtime.eval("counter += 1;").expect("Unwrap failed");
+    let result = engine.js_runtime.eval("counter").expect("Unwrap failed");
     assert_eq!(result, "2");
 }
 
@@ -96,16 +96,16 @@ fn test_dom_api_bindings() {
 </html>"#;
     
     // load_html triggers the inline script execution which will modify the tree
-    engine.load_html(html).unwrap();
+    engine.load_html(html).expect("Unwrap failed");
     
     // Verify the DOM tree reflects these changes in Rust
-    let doc_root = engine.context.document.as_ref().unwrap().root.clone();
+    let doc_root = engine.context.document.as_ref().expect("Unwrap failed").root.clone();
     let test_div = xiaopeng_dom::Node::get_element_by_id(&doc_root, "test-div").expect("div not found");
     
-    let text = test_div.read().unwrap().text_content();
+    let text = test_div.read().expect("Lock poisoned").text_content();
     assert_eq!(text, "Modified via JSNew Element"); // Inner div text + p text
     
-    let guard = test_div.read().unwrap();
+    let guard = test_div.read().expect("Lock poisoned");
     if let xiaopeng_dom::NodeData::Element(el_data) = &guard.data {
         assert!(el_data.has_class("foo"));
         assert!(el_data.has_class("bar"));

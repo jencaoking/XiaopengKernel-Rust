@@ -50,7 +50,7 @@ pub struct ResourceCache {
 
 impl ResourceCache {
     pub fn new(capacity: usize) -> Self {
-        let cap = NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(128).unwrap());
+        let cap = NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(128).expect("Unwrap failed"));
         Self { inner: LruCache::new(cap) }
     }
 

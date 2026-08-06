@@ -205,13 +205,13 @@ impl BrowserEngine {
     fn run_inline_scripts(&mut self, node: &xiaopeng_dom::NodePtr) {
         use xiaopeng_dom::NodeData;
         let children = {
-            let n = node.read().unwrap();
+            let n = node.read().expect("Lock poisoned");
             match &n.data {
                 NodeData::Element(el) if el.tag_name == "script" => {
                     // Collect text content of this script node
                     let mut src = String::new();
                     for child in &n.children {
-                        if let NodeData::Text(t) = &child.read().unwrap().data {
+                        if let NodeData::Text(t) = &child.read().expect("Lock poisoned").data {
                             src.push_str(t);
                         }
                     }

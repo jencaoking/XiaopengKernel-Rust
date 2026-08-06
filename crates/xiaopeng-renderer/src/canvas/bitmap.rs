@@ -93,7 +93,7 @@ impl BitmapCanvas {
         for glyph in shaped.glyphs {
             if let Ok(img) = fm.rasterize_glyph(glyph.glyph_id, font_size) {
                 if img.placement.width > 0 && img.placement.height > 0 {
-                    let mut glyph_pixmap = Pixmap::new(img.placement.width, img.placement.height).unwrap();
+                    let mut glyph_pixmap = Pixmap::new(img.placement.width, img.placement.height).expect("Unwrap failed");
                     let pixels = glyph_pixmap.pixels_mut();
                     
                     // Use SIMD accelerated blending if available

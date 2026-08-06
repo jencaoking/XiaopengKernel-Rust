@@ -25,7 +25,7 @@ fn test_event_dispatch_phases() {
         "click",
         Arc::new(move |event: &mut Event| {
             assert_eq!(event.phase, EventPhase::CapturingPhase);
-            order_clone.lock().unwrap().push("parent_capture");
+            order_clone.lock().expect("Unwrap failed").push("parent_capture");
         }),
         true, // use_capture
     );
@@ -37,7 +37,7 @@ fn test_event_dispatch_phases() {
         "click",
         Arc::new(move |event: &mut Event| {
             assert_eq!(event.phase, EventPhase::AtTarget);
-            order_clone2.lock().unwrap().push("child_target_1");
+            order_clone2.lock().expect("Unwrap failed").push("child_target_1");
         }),
         false,
     );
@@ -49,7 +49,7 @@ fn test_event_dispatch_phases() {
         "click",
         Arc::new(move |event: &mut Event| {
             assert_eq!(event.phase, EventPhase::AtTarget);
-            order_clone3.lock().unwrap().push("child_target_2");
+            order_clone3.lock().expect("Unwrap failed").push("child_target_2");
         }),
         true,
     );
@@ -61,7 +61,7 @@ fn test_event_dispatch_phases() {
         "click",
         Arc::new(move |event: &mut Event| {
             assert_eq!(event.phase, EventPhase::BubblingPhase);
-            order_clone4.lock().unwrap().push("parent_bubble");
+            order_clone4.lock().expect("Unwrap failed").push("parent_bubble");
         }),
         false,
     );
@@ -70,7 +70,7 @@ fn test_event_dispatch_phases() {
     let mut event = Event::new("click", true, true);
     Node::dispatch_event(&child, &mut event);
 
-    let order = event_order.lock().unwrap();
+    let order = event_order.lock().expect("Unwrap failed");
     assert_eq!(
         *order,
         vec!["parent_capture", "child_target_1", "child_target_2", "parent_bubble"]
@@ -90,7 +90,7 @@ fn test_event_stop_propagation() {
         &parent,
         "click",
         Arc::new(move |_: &mut Event| {
-            order_clone.lock().unwrap().push("parent_capture");
+            order_clone.lock().expect("Unwrap failed").push("parent_capture");
         }),
         true,
     );
@@ -100,7 +100,7 @@ fn test_event_stop_propagation() {
         &child,
         "click",
         Arc::new(move |event: &mut Event| {
-            order_clone2.lock().unwrap().push("child_target");
+            order_clone2.lock().expect("Unwrap failed").push("child_target");
             event.stop_propagation();
         }),
         false,
@@ -111,7 +111,7 @@ fn test_event_stop_propagation() {
         &parent,
         "click",
         Arc::new(move |_: &mut Event| {
-            order_clone3.lock().unwrap().push("parent_bubble");
+            order_clone3.lock().expect("Unwrap failed").push("parent_bubble");
         }),
         false,
     );
@@ -119,7 +119,7 @@ fn test_event_stop_propagation() {
     let mut event = Event::new("click", true, true);
     Node::dispatch_event(&child, &mut event);
 
-    let order = event_order.lock().unwrap();
+    let order = event_order.lock().expect("Unwrap failed");
     // Parent bubble should NOT fire because propagation was stopped at child.
     assert_eq!(
         *order,

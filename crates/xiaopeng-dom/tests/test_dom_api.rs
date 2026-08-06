@@ -53,29 +53,29 @@ fn test_dom_element_traversal() {
     Node::append_child(&div, &p2);
     Node::append_child(&div, &span);
     
-    assert_eq!(div.read().unwrap().child_element_count(), 3);
+    assert_eq!(div.read().expect("Lock poisoned").child_element_count(), 3);
     
-    let first_child = div.read().unwrap().first_element_child().unwrap();
+    let first_child = div.read().expect("Lock poisoned").first_element_child().expect("Unwrap failed");
     assert_eq!(
-        first_child.read().unwrap().node_type(),
+        first_child.read().expect("Lock poisoned").node_type(),
         xiaopeng_dom::NodeType::Element
     );
     
-    let last_child = div.read().unwrap().last_element_child().unwrap();
+    let last_child = div.read().expect("Lock poisoned").last_element_child().expect("Unwrap failed");
     assert_eq!(
-        last_child.read().unwrap().node_type(),
+        last_child.read().expect("Lock poisoned").node_type(),
         xiaopeng_dom::NodeType::Element
     );
     
-    let next = Node::next_element_sibling(&first_child).unwrap();
+    let next = Node::next_element_sibling(&first_child).expect("Unwrap failed");
     assert_eq!(
-        next.read().unwrap().node_type(),
+        next.read().expect("Lock poisoned").node_type(),
         xiaopeng_dom::NodeType::Element
     );
     
-    let prev = Node::previous_element_sibling(&last_child).unwrap();
+    let prev = Node::previous_element_sibling(&last_child).expect("Unwrap failed");
     assert_eq!(
-        prev.read().unwrap().node_type(),
+        prev.read().expect("Lock poisoned").node_type(),
         xiaopeng_dom::NodeType::Element
     );
 }
@@ -90,14 +90,14 @@ fn test_dom_clone_node() {
     Node::append_child(&div, &p);
     
     let shallow_clone = Node::clone_node(&div, false);
-    if let NodeData::Element(ref el) = shallow_clone.read().unwrap().data {
+    if let NodeData::Element(ref el) = shallow_clone.read().expect("Lock poisoned").data {
         assert_eq!(el.tag_name, "div");
         assert_eq!(el.id(), Some(&"original".into()));
     } else { panic!("Expected element"); }
-    assert_eq!(shallow_clone.read().unwrap().child_element_count(), 0);
+    assert_eq!(shallow_clone.read().expect("Lock poisoned").child_element_count(), 0);
     
     let deep_clone = Node::clone_node(&div, true);
-    assert_eq!(deep_clone.read().unwrap().child_element_count(), 1);
+    assert_eq!(deep_clone.read().expect("Lock poisoned").child_element_count(), 1);
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn test_insert_before_self_move_deadlock() {
     let result = Node::insert_before(&parent, &a, 2);
     assert!(result.is_ok());
     
-    let children = parent.read().unwrap().children.clone();
+    let children = parent.read().expect("Lock poisoned").children.clone();
     assert_eq!(children.len(), 4);
     
     // The order should now be B, C, A, D?
@@ -147,7 +147,7 @@ fn test_insert_before_self_move_deadlock() {
     // Retain (remove A): [B, C, D]
     // Insert at 2: [B, C, A, D]
     let tags: Vec<String> = children.iter().map(|c| {
-        if let NodeData::Element(ref el) = c.read().unwrap().data {
+        if let NodeData::Element(ref el) = c.read().expect("Lock poisoned").data {
             el.tag_name.clone()
         } else {
             String::new()

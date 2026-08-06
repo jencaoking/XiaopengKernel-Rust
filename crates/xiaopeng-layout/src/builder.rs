@@ -12,7 +12,7 @@ pub fn build_layout_tree(
     viewport_height: f32,
     stylesheet: &xiaopeng_style::parser::StyleSheet,
 ) -> Option<LayoutBox> {
-    let node_ref = node.read().unwrap();
+    let node_ref = node.read().expect("Lock poisoned");
     
     if node_ref.node_type() == NodeType::Document {
         let children = node_ref.children.clone();

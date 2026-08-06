@@ -21,13 +21,13 @@ lazy_static! {
 /// Register a node in the global registry and return its unique ID.
 pub fn expose_node(node: NodePtr) -> usize {
     let id: usize = node.0.into();
-    JS_NODES.write().unwrap().insert(id, node);
+    JS_NODES.write().expect("Lock poisoned").insert(id, node);
     id
 }
 
 /// Retrieve a node from the global registry by its ID.
 pub fn get_node(id: usize) -> Option<NodePtr> {
-    JS_NODES.read().unwrap().get(&id).cloned()
+    JS_NODES.read().expect("Lock poisoned").get(&id).cloned()
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ fn dom_remove_child(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> Js
 fn dom_get_parent_node(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
     let node_id = args.get(0).and_then(|v| v.as_number()).unwrap_or(0.0) as usize;
     if let Some(node) = get_node(node_id) {
-        let parent = node.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
+        let parent = node.read().expect("Lock poisoned").parent.as_ref().and_then(|w| w.upgrade());
         if let Some(p) = parent {
             let id = expose_node(p);
             return Ok(JsValue::from(id as f64));
@@ -125,7 +125,7 @@ fn dom_get_parent_node(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) ->
 fn dom_get_children(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let node_id = args.get(0).and_then(|v| v.as_number()).unwrap_or(0.0) as usize;
     if let Some(node) = get_node(node_id) {
-        let children = node.read().unwrap().children.clone();
+        let children = node.read().expect("Lock poisoned").children.clone();
         let ids: Vec<JsValue> = children.into_iter().map(|c| {
             let id = expose_node(c);
             JsValue::from(id as f64)
@@ -139,7 +139,7 @@ fn dom_get_children(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsR
 fn dom_get_text_content(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> JsResult<JsValue> {
     let node_id = args.get(0).and_then(|v| v.as_number()).unwrap_or(0.0) as usize;
     if let Some(node) = get_node(node_id) {
-        let text = node.read().unwrap().text_content();
+        let text = node.read().expect("Lock poisoned").text_content();
         return Ok(JsValue::from(boa_engine::JsString::from(text.as_str())));
     }
     Ok(JsValue::from(boa_engine::JsString::from("")))
@@ -150,10 +150,10 @@ fn dom_set_text_content(_this: &JsValue, args: &[JsValue], ctx: &mut Context) ->
     let text = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         n.children.clear();
         let text_node = Node::new(NodeData::Text(text));
-        text_node.write().unwrap().parent = Some(NodePtr::downgrade(&node));
+        text_node.write().expect("Lock poisoned").parent = Some(NodePtr::downgrade(&node));
         n.children.push(text_node);
     }
     Ok(JsValue::undefined())
@@ -163,7 +163,7 @@ fn dom_get_inner_html(_this: &JsValue, args: &[JsValue], _ctx: &mut Context) -> 
     let node_id = args.get(0).and_then(|v| v.as_number()).unwrap_or(0.0) as usize;
     if let Some(node) = get_node(node_id) {
         // Build innerHTML from children
-        let children = node.read().unwrap().children.clone();
+        let children = node.read().expect("Lock poisoned").children.clone();
         let html: String = children.iter().map(Node::to_html).collect();
         return Ok(JsValue::from(boa_engine::JsString::from(html.as_str())));
     }
@@ -175,7 +175,7 @@ fn dom_get_attribute(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> Js
     let name = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        if let NodeData::Element(ref el) = node.read().unwrap().data {
+        if let NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
             if let Some(val) = el.get_attribute(&name) {
                 return Ok(JsValue::from(boa_engine::JsString::from(val.as_str())));
             }
@@ -190,7 +190,7 @@ fn dom_set_attribute(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> Js
     let value = args.get(2).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         if let NodeData::Element(ref mut el) = n.data {
             el.set_attribute(name, value);
         }
@@ -203,7 +203,7 @@ fn dom_remove_attribute(_this: &JsValue, args: &[JsValue], ctx: &mut Context) ->
     let name = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         if let NodeData::Element(ref mut el) = n.data {
             el.remove_attribute(&name);
         }
@@ -216,7 +216,7 @@ fn dom_has_attribute(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> Js
     let name = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        if let NodeData::Element(ref el) = node.read().unwrap().data {
+        if let NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
             return Ok(JsValue::from(el.has_attribute(&name)));
         }
     }
@@ -228,7 +228,7 @@ fn dom_classlist_add(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> Js
     let cls = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         if let NodeData::Element(ref mut el) = n.data {
             el.add_class(&cls);
         }
@@ -241,7 +241,7 @@ fn dom_classlist_remove(_this: &JsValue, args: &[JsValue], ctx: &mut Context) ->
     let cls = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         if let NodeData::Element(ref mut el) = n.data {
             el.remove_class(&cls);
         }
@@ -254,7 +254,7 @@ fn dom_classlist_contains(_this: &JsValue, args: &[JsValue], ctx: &mut Context) 
     let cls = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        if let NodeData::Element(ref el) = node.read().unwrap().data {
+        if let NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
             return Ok(JsValue::from(el.has_class(&cls)));
         }
     }
@@ -266,7 +266,7 @@ fn dom_classlist_toggle(_this: &JsValue, args: &[JsValue], ctx: &mut Context) ->
     let cls = args.get(1).unwrap_or(&JsValue::undefined()).to_string(ctx)?.to_std_string_escaped();
 
     if let Some(node) = get_node(node_id) {
-        let mut n = node.write().unwrap();
+        let mut n = node.write().expect("Lock poisoned");
         if let NodeData::Element(ref mut el) = n.data {
             if el.has_class(&cls) {
                 el.remove_class(&cls);
@@ -341,7 +341,7 @@ fn dom_dispatch_event(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
         let mut current_id = node_id;
         loop {
             let parent_id = get_node(current_id)
-                .and_then(|n| n.read().unwrap().parent.as_ref().and_then(|w| w.upgrade()))
+                .and_then(|n| n.read().expect("Lock poisoned").parent.as_ref().and_then(|w| w.upgrade()))
                 .map(|p| p.0.into());
 
             match parent_id {

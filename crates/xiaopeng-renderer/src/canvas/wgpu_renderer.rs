@@ -39,7 +39,7 @@ impl WgpuRenderer {
             .next()
             .unwrap_or(surface_caps.formats[0]);
             
-        let config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).unwrap();
+        let config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1)).expect("Unwrap failed");
         surface.configure(&device, &config);
         let render_pipeline = create_render_pipeline(&device, config.format);
 

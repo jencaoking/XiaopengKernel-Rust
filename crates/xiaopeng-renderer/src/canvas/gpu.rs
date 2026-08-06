@@ -173,17 +173,17 @@ pub fn render_display_list_gpu(display_list: &[&LayoutBox], width: u32, height: 
     let buffer_slice = output_buffer.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-        tx.send(res).unwrap();
+        tx.send(res).expect("Unwrap failed");
     });
     device.poll(wgpu::PollType::Wait {
         submission_index: Some(submission),
         timeout: None,
-    }).unwrap();
-    rx.recv().unwrap().unwrap();
+    }).expect("Unwrap failed");
+    rx.recv().expect("Unwrap failed").expect("Unwrap failed");
 
     let mut result = GpuCanvas::new(width, height);
     {
-        let data = buffer_slice.get_mapped_range().unwrap();
+        let data = buffer_slice.get_mapped_range().expect("Unwrap failed");
         // Remove padding
         for y in 0..height {
             let src_start = (y * padded_bytes_per_row) as usize;

@@ -4,10 +4,10 @@ use xiaopeng_dom::{Node, NodeData};
 
 #[test]
 fn test_dom_node_creation() {
-    let mut runtime = JsRuntime::new().unwrap();
+    let mut runtime = JsRuntime::new().expect("Unwrap failed");
     let root = Node::new(NodeData::Document);
     let root_id = expose_node(root);
-    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+    runtime.eval(&format!("____init_document({});", root_id)).expect("Unwrap failed");
 
     let script = r#"
         var div = document.createElement("div");
@@ -23,16 +23,16 @@ fn test_dom_node_creation() {
         found !== null && found.className === "container" && found.childNodes.length === 1
     "#;
 
-    let res = runtime.eval(script).unwrap();
+    let res = runtime.eval(script).expect("Unwrap failed");
     assert_eq!(res, "true");
 }
 
 #[test]
 fn test_dom_class_list() {
-    let mut runtime = JsRuntime::new().unwrap();
+    let mut runtime = JsRuntime::new().expect("Unwrap failed");
     let root = Node::new(NodeData::Document);
     let root_id = expose_node(root);
-    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+    runtime.eval(&format!("____init_document({});", root_id)).expect("Unwrap failed");
 
     let script = r#"
         var div = document.createElement("div");
@@ -45,16 +45,16 @@ fn test_dom_class_list() {
         hasBtn === true && hasBtnAfter === false && div.classList.contains("active") === true
     "#;
 
-    let res = runtime.eval(script).unwrap();
+    let res = runtime.eval(script).expect("Unwrap failed");
     assert_eq!(res, "true");
 }
 
 #[test]
 fn test_dom_events() {
-    let mut runtime = JsRuntime::new().unwrap();
+    let mut runtime = JsRuntime::new().expect("Unwrap failed");
     let root = Node::new(NodeData::Document);
     let root_id = expose_node(root);
-    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+    runtime.eval(&format!("____init_document({});", root_id)).expect("Unwrap failed");
 
     let script = r#"
         var div = document.createElement("div");
@@ -72,16 +72,16 @@ fn test_dom_events() {
         clicked === 1 && lastTarget === div
     "#;
 
-    let res = runtime.eval(script).unwrap();
+    let res = runtime.eval(script).expect("Unwrap failed");
     assert_eq!(res, "true");
 }
 
 #[test]
 fn test_event_bubbling() {
-    let mut runtime = JsRuntime::new().unwrap();
+    let mut runtime = JsRuntime::new().expect("Unwrap failed");
     let root = Node::new(NodeData::Document);
     let root_id = expose_node(root);
-    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+    runtime.eval(&format!("____init_document({});", root_id)).expect("Unwrap failed");
 
     let script = r#"
         var parent = document.createElement("div");
@@ -106,16 +106,16 @@ fn test_event_bubbling() {
         parentClicked === 1 && childClicked === 1
     "#;
 
-    let res = runtime.eval(script).unwrap();
+    let res = runtime.eval(script).expect("Unwrap failed");
     assert_eq!(res, "true");
 }
 
 #[test]
 fn test_dom_query_selector() {
-    let mut runtime = JsRuntime::new().unwrap();
+    let mut runtime = JsRuntime::new().expect("Unwrap failed");
     let root = Node::new(NodeData::Document);
     let root_id = expose_node(root);
-    runtime.eval(&format!("____init_document({});", root_id)).unwrap();
+    runtime.eval(&format!("____init_document({});", root_id)).expect("Unwrap failed");
 
     let script = r##"
         var parent = document.createElement("div");
@@ -148,6 +148,6 @@ fn test_dom_query_selector() {
         allText[1].__id === child2.__id
     "##;
 
-    let res = runtime.eval(script).unwrap();
+    let res = runtime.eval(script).expect("Unwrap failed");
     assert_eq!(res, "true");
 }

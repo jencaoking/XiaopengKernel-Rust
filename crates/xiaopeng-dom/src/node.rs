@@ -24,7 +24,7 @@ pub struct NodeGuard<'a> {
 impl<'a> std::ops::Deref for NodeGuard<'a> {
     type Target = Node;
     fn deref(&self) -> &Self::Target {
-        self.guard.get(self.id).unwrap().get()
+        self.guard.get(self.id).expect("Unwrap failed").get()
     }
 }
 
@@ -36,27 +36,27 @@ pub struct NodeWriteGuard<'a> {
 impl<'a> std::ops::Deref for NodeWriteGuard<'a> {
     type Target = Node;
     fn deref(&self) -> &Self::Target {
-        self.guard.get(self.id).unwrap().get()
+        self.guard.get(self.id).expect("Unwrap failed").get()
     }
 }
 
 impl<'a> std::ops::DerefMut for NodeWriteGuard<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.get_mut(self.id).unwrap().get_mut()
+        self.guard.get_mut(self.id).expect("Unwrap failed").get_mut()
     }
 }
 
 impl NodePtr {
     pub fn read(&self) -> Result<NodeGuard, ()> {
         Ok(NodeGuard {
-            guard: dom_arena().read().unwrap(),
+            guard: dom_arena().read().expect("Lock poisoned"),
             id: self.0,
         })
     }
     
     pub fn write(&self) -> Result<NodeWriteGuard, ()> {
         Ok(NodeWriteGuard {
-            guard: dom_arena().write().unwrap(),
+            guard: dom_arena().write().expect("Lock poisoned"),
             id: self.0,
         })
     }
@@ -337,7 +337,7 @@ pub struct Node {
 impl Node {
     pub fn new(data: NodeData) -> NodePtr {
         debug!(?data, "Creating new DOM Node");
-        let mut arena = dom_arena().write().unwrap();
+        let mut arena = dom_arena().write().expect("Lock poisoned");
         let id = arena.new_node(Node {
             parent: None,
             children: Vec::new(),
@@ -371,7 +371,7 @@ impl Node {
         crate::node::mark_dom_dirty();
         let mut current = Some(NodePtr::clone_ptr(node_ptr));
         while let Some(n) = current {
-            let mut n_write = n.write().unwrap();
+            let mut n_write = n.write().expect("Lock poisoned");
             let was_dirty = n_write.id_cache.is_none() 
                 && n_write.tag_cache.is_none() 
                 && n_write.class_cache.is_none();
@@ -392,15 +392,15 @@ impl Node {
     pub fn append_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) {
         debug!("Appending child to parent DOM Node");
         
-        let old_parent = child_ptr.read().unwrap().parent.clone().and_then(|w| w.upgrade());
+        let old_parent = child_ptr.read().expect("Lock poisoned").parent.clone().and_then(|w| w.upgrade());
         if let Some(old_parent) = old_parent {
-            old_parent.write().unwrap().children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
+            old_parent.write().expect("Lock poisoned").children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
             Self::invalidate_caches(&old_parent);
         }
 
         // Set new parent
-        child_ptr.write().unwrap().parent = Some(NodePtr::downgrade(parent_ptr));
-        parent_ptr.write().unwrap().children.push(NodePtr::clone_ptr(child_ptr));
+        child_ptr.write().expect("Lock poisoned").parent = Some(NodePtr::downgrade(parent_ptr));
+        parent_ptr.write().expect("Lock poisoned").children.push(NodePtr::clone_ptr(child_ptr));
         Self::invalidate_caches(parent_ptr);
     }
 
@@ -409,7 +409,7 @@ impl Node {
         
         // 1. Strict boundary check (read lock only, released immediately)
         {
-            let parent = parent_ptr.read().unwrap();
+            let parent = parent_ptr.read().expect("Lock poisoned");
             if index >= parent.children.len() {
                 return Err("IndexOutOfBounds: insert_before requires index < children.len()");
             }
@@ -417,19 +417,19 @@ impl Node {
 
         // 2. Remove from old parent if exists.
         // We do this BEFORE acquiring parent_ptr's write lock to avoid deadlock if old_parent == parent_ptr
-        let old_parent = child_ptr.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
+        let old_parent = child_ptr.read().expect("Lock poisoned").parent.as_ref().and_then(|w| w.upgrade());
         if let Some(ref old_p) = old_parent {
-            old_p.write().unwrap().children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
+            old_p.write().expect("Lock poisoned").children.retain(|c| !NodePtr::ptr_eq(c, child_ptr));
             Self::invalidate_caches(old_p);
         }
 
         // 3. Insert into the new parent.
-        let mut parent = parent_ptr.write().unwrap();
+        let mut parent = parent_ptr.write().expect("Lock poisoned");
         // If old_parent == parent_ptr, retaining the child above might have shrunk the children vec.
         // We clamp the index to prevent out-of-bounds panics after removal.
         let safe_index = index.min(parent.children.len());
         
-        child_ptr.write().unwrap().parent = Some(NodePtr::downgrade(parent_ptr));
+        child_ptr.write().expect("Lock poisoned").parent = Some(NodePtr::downgrade(parent_ptr));
         parent.children.insert(safe_index, NodePtr::clone_ptr(child_ptr));
         drop(parent); // drop write lock before invalidating cache
         Self::invalidate_caches(parent_ptr);
@@ -439,7 +439,7 @@ impl Node {
 
     pub fn insert_before_node(parent_ptr: &NodePtr, child_ptr: &NodePtr, reference_ptr: &NodePtr) -> Result<(), &'static str> {
         let index = {
-            let parent = parent_ptr.read().unwrap();
+            let parent = parent_ptr.read().expect("Lock poisoned");
             parent.children.iter().position(|c| NodePtr::ptr_eq(c, reference_ptr))
         };
         
@@ -452,12 +452,12 @@ impl Node {
 
     pub fn remove_child(parent_ptr: &NodePtr, child_ptr: &NodePtr) -> Option<NodePtr> {
         debug!("Removing child from parent DOM Node");
-        let mut parent = parent_ptr.write().unwrap();
+        let mut parent = parent_ptr.write().expect("Lock poisoned");
         let index = parent.children.iter().position(|c| NodePtr::ptr_eq(c, child_ptr));
         
         if let Some(idx) = index {
             let removed = parent.children.remove(idx);
-            removed.write().unwrap().parent = None;
+            removed.write().expect("Lock poisoned").parent = None;
             drop(parent);
             Self::invalidate_caches(parent_ptr);
             Some(removed)
@@ -475,7 +475,7 @@ impl Node {
             NodeData::Document | NodeData::DocumentFragment | NodeData::Element(_) => {
                 let mut content = String::new();
                 for child in &self.children {
-                    content.push_str(&child.read().unwrap().text_content());
+                    content.push_str(&child.read().expect("Lock poisoned").text_content());
                 }
                 content
             }
@@ -491,23 +491,23 @@ impl Node {
     }
 
     pub fn first_element_child(&self) -> Option<NodePtr> {
-        self.children.iter().find(|c| c.read().unwrap().node_type() == NodeType::Element).cloned()
+        self.children.iter().find(|c| c.read().expect("Lock poisoned").node_type() == NodeType::Element).cloned()
     }
 
     pub fn last_element_child(&self) -> Option<NodePtr> {
-        self.children.iter().rev().find(|c| c.read().unwrap().node_type() == NodeType::Element).cloned()
+        self.children.iter().rev().find(|c| c.read().expect("Lock poisoned").node_type() == NodeType::Element).cloned()
     }
 
     pub fn next_element_sibling(node_ptr: &NodePtr) -> Option<NodePtr> {
         let parent = {
-            let node = node_ptr.read().unwrap();
+            let node = node_ptr.read().expect("Lock poisoned");
             node.parent.as_ref().and_then(|w| w.upgrade())
         };
         if let Some(parent) = parent {
-            let p = parent.read().unwrap();
+            let p = parent.read().expect("Lock poisoned");
             let pos = p.children.iter().position(|c| NodePtr::ptr_eq(c, node_ptr))?;
             for sibling in p.children.iter().skip(pos + 1) {
-                if sibling.read().unwrap().node_type() == NodeType::Element {
+                if sibling.read().expect("Lock poisoned").node_type() == NodeType::Element {
                     return Some(NodePtr::clone_ptr(sibling));
                 }
             }
@@ -517,14 +517,14 @@ impl Node {
 
     pub fn previous_element_sibling(node_ptr: &NodePtr) -> Option<NodePtr> {
         let parent = {
-            let node = node_ptr.read().unwrap();
+            let node = node_ptr.read().expect("Lock poisoned");
             node.parent.as_ref().and_then(|w| w.upgrade())
         };
         if let Some(parent) = parent {
-            let p = parent.read().unwrap();
+            let p = parent.read().expect("Lock poisoned");
             let pos = p.children.iter().position(|c| NodePtr::ptr_eq(c, node_ptr))?;
             for sibling in p.children.iter().take(pos).rev() {
-                if sibling.read().unwrap().node_type() == NodeType::Element {
+                if sibling.read().expect("Lock poisoned").node_type() == NodeType::Element {
                     return Some(NodePtr::clone_ptr(sibling));
                 }
             }
@@ -533,7 +533,7 @@ impl Node {
     }
 
     pub fn child_element_count(&self) -> usize {
-        self.children.iter().filter(|c| c.read().unwrap().node_type() == NodeType::Element).count()
+        self.children.iter().filter(|c| c.read().expect("Lock poisoned").node_type() == NodeType::Element).count()
     }
 
     /// Clones a node.
@@ -543,7 +543,7 @@ impl Node {
     /// - The cloned node has no parent (`parent` is `None`) until it is appended to another node.
     /// - If `deep` is true, all descendants are also cloned recursively.
     pub fn clone_node(node_ptr: &NodePtr, deep: bool) -> NodePtr {
-        let node = node_ptr.read().unwrap();
+        let node = node_ptr.read().expect("Lock poisoned");
         // We clone the inner data, but intentionally do not clone listeners.
         // Node::new will initialize `parent` to None and an empty listeners map.
         let cloned_data = node.data.clone();
@@ -563,7 +563,7 @@ impl Node {
     }
 
     fn to_html_inner(node_ptr: &NodePtr, parent_tag: Option<&str>) -> String {
-        let node = node_ptr.read().unwrap();
+        let node = node_ptr.read().expect("Lock poisoned");
         match &node.data {
             NodeData::Document | NodeData::DocumentFragment => {
                 node.children.iter().map(|c| Self::to_html_inner(c, None)).collect::<Vec<_>>().join("")
@@ -631,7 +631,7 @@ impl Node {
     /// Recursively searches for an element with the given ID.
     pub fn get_element_by_id(node: &NodePtr, id: &str) -> Option<NodePtr> {
         Self::ensure_id_cache(node);
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         if let Some(cache) = &n.id_cache {
             if let Some(weak) = cache.get(id) {
                 return weak.upgrade();
@@ -641,16 +641,16 @@ impl Node {
     }
 
     fn ensure_id_cache(node: &NodePtr) {
-        let is_none = node.read().unwrap().id_cache.is_none();
+        let is_none = node.read().expect("Lock poisoned").id_cache.is_none();
         if is_none {
             let mut cache = HashMap::new();
             Self::build_id_cache(node, &mut cache);
-            node.write().unwrap().id_cache = Some(cache);
+            node.write().expect("Lock poisoned").id_cache = Some(cache);
         }
     }
 
     fn build_id_cache(node: &NodePtr, cache: &mut HashMap<String, WeakNodePtr>) {
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         if let NodeData::Element(ref el) = n.data {
             if let Some(id) = el.id() {
                 if !cache.contains_key(id) {
@@ -666,7 +666,7 @@ impl Node {
     /// Recursively collects all elements matching the given tag name.
     pub fn get_elements_by_tag_name(node: &NodePtr, tag_name: &str) -> Vec<NodePtr> {
         Self::ensure_tag_cache(node);
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         let mut results = Vec::new();
         if let Some(cache) = &n.tag_cache {
             if let Some(weaks) = cache.get(tag_name) {
@@ -681,16 +681,16 @@ impl Node {
     }
 
     fn ensure_tag_cache(node: &NodePtr) {
-        let is_none = node.read().unwrap().tag_cache.is_none();
+        let is_none = node.read().expect("Lock poisoned").tag_cache.is_none();
         if is_none {
             let mut cache = HashMap::new();
             Self::build_tag_cache(node, &mut cache);
-            node.write().unwrap().tag_cache = Some(cache);
+            node.write().expect("Lock poisoned").tag_cache = Some(cache);
         }
     }
 
     fn build_tag_cache(node: &NodePtr, cache: &mut HashMap<String, Vec<WeakNodePtr>>) {
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         if let NodeData::Element(ref el) = n.data {
             cache.entry(el.tag_name.clone()).or_default().push(NodePtr::downgrade(node));
         }
@@ -702,7 +702,7 @@ impl Node {
     /// Recursively collects all elements containing the given class name.
     pub fn get_elements_by_class_name(node: &NodePtr, class_name: &str) -> Vec<NodePtr> {
         Self::ensure_class_cache(node);
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         let mut results = Vec::new();
         if let Some(cache) = &n.class_cache {
             if let Some(weaks) = cache.get(class_name) {
@@ -717,16 +717,16 @@ impl Node {
     }
 
     fn ensure_class_cache(node: &NodePtr) {
-        let is_none = node.read().unwrap().class_cache.is_none();
+        let is_none = node.read().expect("Lock poisoned").class_cache.is_none();
         if is_none {
             let mut cache = HashMap::new();
             Self::build_class_cache(node, &mut cache);
-            node.write().unwrap().class_cache = Some(cache);
+            node.write().expect("Lock poisoned").class_cache = Some(cache);
         }
     }
 
     fn build_class_cache(node: &NodePtr, cache: &mut HashMap<String, Vec<WeakNodePtr>>) {
-        let n = node.read().unwrap();
+        let n = node.read().expect("Lock poisoned");
         if let NodeData::Element(ref el) = n.data {
             for c in el.classes() {
                 cache.entry(c.to_string()).or_default().push(NodePtr::downgrade(node));
@@ -753,7 +753,7 @@ impl Node {
         listener: Arc<dyn EventListener>,
         use_capture: bool,
     ) {
-        let mut node = node_ptr.write().unwrap();
+        let mut node = node_ptr.write().expect("Lock poisoned");
         let entries = node.listeners.entry(event_type.to_string()).or_default();
         entries.push(EventListenerEntry { listener, use_capture });
     }
@@ -764,7 +764,7 @@ impl Node {
         let mut path = Vec::new();
         let mut current = NodePtr::clone_ptr(node_ptr);
         loop {
-            let parent = current.read().unwrap().parent.as_ref().and_then(|w| w.upgrade());
+            let parent = current.read().expect("Lock poisoned").parent.as_ref().and_then(|w| w.upgrade());
             if let Some(p) = parent {
                 path.push(NodePtr::clone_ptr(&p));
                 current = p;
@@ -802,7 +802,7 @@ impl Node {
 
     fn invoke_listeners(node_ptr: &NodePtr, event: &mut Event) {
         let listeners_to_run = {
-            let node = node_ptr.read().unwrap();
+            let node = node_ptr.read().expect("Lock poisoned");
             if let Some(entries) = node.listeners.get(&event.event_type) {
                 entries.clone()
             } else {
@@ -850,7 +850,7 @@ mod tests {
         // Test get_element_by_id
         let found = Node::get_element_by_id(&root, "test-id");
         assert!(found.is_some());
-        assert!(NodePtr::ptr_eq(&found.unwrap(), &child1));
+        assert!(NodePtr::ptr_eq(&found.expect("Unwrap failed"), &child1));
 
         // Test get_elements_by_tag_name
         let spans = Node::get_elements_by_tag_name(&root, "span");

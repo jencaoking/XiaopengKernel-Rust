@@ -66,12 +66,12 @@ impl Document {
     }
 
     fn collect_by_name(node: &NodePtr, name: &str, results: &mut Vec<NodePtr>) {
-        if let NodeData::Element(ref el) = node.read().unwrap().data {
+        if let NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
             if el.get_attribute("name") == Some(&name.to_string()) {
                 results.push(NodePtr::clone_ptr(node));
             }
         }
-        let children = node.read().unwrap().children.clone();
+        let children = node.read().expect("Lock poisoned").children.clone();
         for child in children {
             Self::collect_by_name(&child, name, results);
         }
@@ -84,19 +84,19 @@ impl Document {
     }
 
     fn collect_by_tag_name_ns(node: &NodePtr, ns: &str, local_name: &str, results: &mut Vec<NodePtr>) {
-        if let NodeData::Element(ref el) = node.read().unwrap().data {
+        if let NodeData::Element(ref el) = node.read().expect("Lock poisoned").data {
             if el.namespace_uri.as_deref() == Some(ns) && el.local_name == local_name {
                 results.push(NodePtr::clone_ptr(node));
             }
         }
-        let children = node.read().unwrap().children.clone();
+        let children = node.read().expect("Lock poisoned").children.clone();
         for child in children {
             Self::collect_by_tag_name_ns(&child, ns, local_name, results);
         }
     }
 
     pub fn document_element(&self) -> Option<NodePtr> {
-        self.root.read().unwrap().first_element_child()
+        self.root.read().expect("Lock poisoned").first_element_child()
     }
 
     pub fn head(&self) -> Option<NodePtr> {
@@ -144,7 +144,7 @@ mod tests {
     fn test_document_creation() {
         let doc = Document::new();
         assert!(matches!(
-            doc.root.read().unwrap().data,
+            doc.root.read().expect("Lock poisoned").data,
             NodeData::Document
         ));
     }
